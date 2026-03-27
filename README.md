@@ -144,6 +144,7 @@ For anything more complex, just talk naturally. No commands to memorize.
 > play Friday on the Deck
 > play playlist 18
 > what's in the House playlist?
+> play my top 25 most played and list the tracks
 ```
 
 ### AirPlay speakers
@@ -216,6 +217,22 @@ Here's what it actually looks like in practice:
   ❯ pause
 
   Paused.
+
+  ❯ play most played playlist and list the tracks
+
+  Now playing Top 25 Most Played:
+
+   1. Andromeda (feat. DRAM) — Gorillaz
+   2. Elastic Reality - Casa de X — Deep Dish
+   3. Aquarama — Moomin
+   4. Lotus Flower — Radiohead
+   5. Urban Jungles — SVG & Faith
+   6. Organ Donor — DJ Shadow
+   7. Say Goodbye — Beck
+   8. Drone Logic — Daniel Avery
+   9. Are You Awake? — Lost In Translation OST
+  10. All I Need — Radiohead
+  ... and 15 more
 ```
 
 ## Requirements

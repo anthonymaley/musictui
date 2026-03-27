@@ -127,6 +127,18 @@ end tell'
 
 # Get track count in a playlist
 osascript -e 'tell application "Music" to get count of tracks of playlist "Working Vibes"'
+
+# List tracks with artist names (great for smart playlists like "Top 25 Most Played")
+osascript -e 'tell application "Music"
+    set trackList to every track of playlist "Top 25 Most Played"
+    set output to ""
+    set i to 1
+    repeat with t in trackList
+        set output to output & i & ". " & name of t & " — " & artist of t & linefeed
+        set i to i + 1
+    end repeat
+    return output
+end tell'
 ```
 
 ### Search Library
@@ -443,6 +455,11 @@ end tell'
 **"Remove the bedroom from the group"**
 1. Deselect Bedroom only (leave others selected)
 2. Show remaining active speakers
+
+**"Play my most played and list the tracks"**
+1. Find the smart playlist → "Top 25 Most Played"
+2. Play it
+3. List all tracks with artist names in a numbered list
 
 Always discover devices and playlists first rather than guessing names. Speaker and playlist names are user-configured and can be anything.
 
