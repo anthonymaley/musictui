@@ -450,6 +450,7 @@ Always discover devices and playlists first rather than guessing names. Speaker 
 
 Common issues and how to handle them:
 
+- **"Parameter error (-50)"** — This often happens when combining AirPlay device selection with playlist playback in a single `tell` block. Split them into separate `osascript` calls: route audio first, then play.
 - **"Music got an error: AppleEvent timed out"** — The Music app may not be running. Try `osascript -e 'tell application "Music" to activate'` first, wait a moment, then retry.
 - **"execution error: Music got an error: Can't get AirPlay device"** — The device name doesn't match. Re-run the device list command and check for exact spelling (names are case-sensitive).
 - **Automation permission denied** — The user needs to go to System Settings → Privacy & Security → Automation and enable access for their terminal app.
@@ -457,6 +458,7 @@ Common issues and how to handle them:
 
 ## Tips
 
+- **Split AirPlay routing and playback into separate `osascript` calls.** Combining speaker selection and `play playlist` in a single `tell` block can trigger a "Parameter error (-50)". Route first, then play in a second call.
 - Always list AirPlay devices before trying to route — don't assume device names
 - When playing a playlist, confirm the exact playlist name first by listing playlists
 - Combine operations in a single `tell` block when possible to reduce latency
