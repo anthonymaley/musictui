@@ -1,487 +1,146 @@
 ---
-name: music
-description: "Control Apple Music playback, AirPlay speakers, and AirPods/Bluetooth headphones on macOS using AppleScript. Use this skill whenever the user wants to play music, control playback (play, pause, skip, volume, shuffle), manage playlists, play an album or artist, search their music library, route audio to AirPlay speakers or AirPods, add or remove speakers from a group, adjust per-speaker volume, switch between headphones and speakers, or check what's currently playing. Trigger on any mention of: Apple Music, AirPlay, speakers, playlist, play a song, what's playing, music volume, now playing, queue, HomePod, AirPods, headphones, Bluetooth audio, album, artist, or any request to control audio playback on their Mac — even casual ones like 'put on some music', 'switch to my AirPods', 'switch to the kitchen speaker', 'add the bedroom to the group', or 'turn down the kitchen'."
+name: ceol
+description: "Control Apple Music playback, AirPlay speakers, AirPods, catalog search, library management, playlists, and music discovery on macOS. Use this skill whenever the user wants to play music, control playback (play, pause, skip, volume, shuffle), manage playlists, play an album or artist, search the Apple Music catalog (100M+ tracks), add tracks to their library, get music recommendations, route audio to AirPlay speakers or AirPods, add or remove speakers from a group, adjust per-speaker volume, switch between headphones and speakers, or check what's currently playing. Trigger on any mention of: Apple Music, AirPlay, speakers, playlist, play a song, what's playing, music volume, now playing, queue, HomePod, AirPods, headphones, Bluetooth audio, album, artist, search for music, add to library, recommendations, similar tracks, new releases, or any request to control audio playback on their Mac — even casual ones like 'put on some music', 'find me something like this', 'switch to my AirPods', 'add the bedroom to the group', or 'turn down the kitchen'."
 ---
 
-# Apple Music Controller
+# Ceol — Apple Music Controller
 
-This skill lets you control Apple Music and AirPlay speakers on the user's Mac via AppleScript (`osascript`). Every command runs through `osascript -e '...'` in bash — no extra dependencies needed.
+Control Apple Music from the terminal via the `ceol` CLI. All commands run as bash — use `ceol` for structured operations, with `--json` for machine-readable output.
 
-## Important: This only works on macOS
+## Architecture
 
-AppleScript is a macOS-only technology. If the user is on Linux or Windows, let them know this skill won't work and suggest alternatives (like Spotify's API or the music-mcp npm package if they have Node.js).
+Ceol has two backends:
+- **AppleScript** — playback, speakers, volume, now playing (no auth needed)
+- **REST API** — catalog search, library writes, playlists via API, discovery (needs auth)
 
-## How it works
-
-All commands follow the same pattern — you construct an AppleScript snippet and run it via `osascript`. The Music app must be installed (it comes with macOS). The user may need to grant automation permissions the first time (System Settings → Privacy & Security → Automation).
-
-## Core Commands Reference
-
-### Playback Control
+## Playback (no auth)
 
 ```bash
-# Play / Resume
-osascript -e 'tell application "Music" to play'
-
-# Pause
-osascript -e 'tell application "Music" to pause'
-
-# Next track
-osascript -e 'tell application "Music" to next track'
-
-# Previous track
-osascript -e 'tell application "Music" to previous track'
-
-# Stop
-osascript -e 'tell application "Music" to stop'
+ceol play                                    # resume
+ceol play --playlist "Working Vibes"         # play a playlist (with shuffle)
+ceol play --song "Get It Done" --artist "Fouk"  # play specific track from library
+ceol pause
+ceol skip                                    # next track
+ceol back                                    # previous track
+ceol stop
+ceol now                                     # what's playing + speakers
+ceol now --json                              # structured: track, artist, album, speakers, state
+ceol shuffle on|off
+ceol repeat off|one|all
 ```
 
-### Now Playing
+## Speakers (no auth)
 
 ```bash
-# Get current track info
-osascript -e 'tell application "Music"
-    set trackName to name of current track
-    set trackArtist to artist of current track
-    set trackAlbum to album of current track
-    set trackDuration to duration of current track
-    set playerPos to player position
-    return trackName & " | " & trackArtist & " | " & trackAlbum & " | " & (round playerPos) & "s / " & (round trackDuration) & "s"
-end tell'
-
-# Get player state (playing, paused, stopped)
-osascript -e 'tell application "Music" to get player state'
+ceol speaker list                            # all AirPlay devices + status
+ceol speaker list --json                     # structured device list
+ceol speaker set "Kitchen"                   # switch to single speaker
+ceol speaker add "Bedroom"                   # add to current group
+ceol speaker remove "Bedroom"                # remove from group
 ```
 
-### Volume
-
-The Music app has a global volume, and each AirPlay device has its own independent volume (both 0–100). Use global volume for quick adjustments, and per-device volume when the user names a specific speaker.
+## Volume (no auth)
 
 ```bash
-# Get global Music volume (0-100)
-osascript -e 'tell application "Music" to get sound volume'
-
-# Set global Music volume
-osascript -e 'tell application "Music" to set sound volume to 50'
-
-# Increase volume by 10
-osascript -e 'tell application "Music" to set sound volume to (sound volume + 10)'
-
-# Decrease volume by 10
-osascript -e 'tell application "Music" to set sound volume to (sound volume - 10)'
-
-# Set volume on a specific AirPlay speaker
-osascript -e 'tell application "Music" to set sound volume of AirPlay device "Kitchen" to 75'
-
-# Get volume of a specific speaker
-osascript -e 'tell application "Music" to get sound volume of AirPlay device "Kitchen"'
-
-# Set different volumes on multiple speakers at once
-osascript -e 'tell application "Music"
-    set sound volume of AirPlay device "Kitchen" to 60
-    set sound volume of AirPlay device "Bedroom" to 30
-end tell'
+ceol vol                                     # show current volume per speaker
+ceol vol 60                                  # set all active speakers to 60
+ceol vol up                                  # +10 on all active speakers
+ceol vol down                                # -10 on all active speakers
+ceol vol Kitchen 80                          # set Kitchen to 80
 ```
 
-### Shuffle & Repeat
+## Catalog Search (developer token only)
 
 ```bash
-# Toggle shuffle on
-osascript -e 'tell application "Music" to set shuffle enabled to true'
-
-# Toggle shuffle off
-osascript -e 'tell application "Music" to set shuffle enabled to false'
-
-# Check shuffle state
-osascript -e 'tell application "Music" to get shuffle enabled'
-
-# Set repeat mode: off, one, all
-osascript -e 'tell application "Music" to set song repeat to all'
-osascript -e 'tell application "Music" to set song repeat to one'
-osascript -e 'tell application "Music" to set song repeat to off'
+ceol search "Bohemian Rhapsody Queen"        # search songs
+ceol search "Fouk" --limit 20               # control result count
+ceol search --artist "Radiohead"             # filter by artist
+ceol search --album "OK Computer"            # filter by album
+ceol search "query" --json                   # structured results with catalog IDs
 ```
 
-### Playlists
+## Add to Library (requires user token)
 
 ```bash
-# List all playlist names
-osascript -e 'tell application "Music" to get name of every playlist'
-
-# Play a specific playlist
-osascript -e 'tell application "Music" to play playlist "Working Vibes"'
-
-# Play a playlist with shuffle
-osascript -e 'tell application "Music"
-    set shuffle enabled to true
-    play playlist "Working Vibes"
-end tell'
-
-# Switch to a different playlist (just play the new one — it replaces the current queue)
-osascript -e 'tell application "Music" to play playlist "Chill Evening"'
-
-# Get tracks in a playlist
-osascript -e 'tell application "Music"
-    set trackList to name of every track of playlist "Working Vibes"
-    return trackList
-end tell'
-
-# Get track count in a playlist
-osascript -e 'tell application "Music" to get count of tracks of playlist "Working Vibes"'
-
-# List tracks with artist names (great for smart playlists like "Top 25 Most Played")
-osascript -e 'tell application "Music"
-    set trackList to every track of playlist "Top 25 Most Played"
-    set output to ""
-    set i to 1
-    repeat with t in trackList
-        set output to output & i & ". " & name of t & " — " & artist of t & linefeed
-        set i to i + 1
-    end repeat
-    return output
-end tell'
+ceol add "Get It Done" "Fouk"                # search + add top result
+ceol add --id 1844648631                     # add by catalog ID
 ```
 
-### Search Library
+## Playlists (requires user token for API, AppleScript fallback for local)
 
 ```bash
-# Search for tracks by name
-osascript -e 'tell application "Music"
-    set results to (every track of playlist "Library" whose name contains "search term")
-    set output to ""
-    repeat with t in results
-        set output to output & name of t & " - " & artist of t & linefeed
-    end repeat
-    return output
-end tell'
-
-# Search by artist
-osascript -e 'tell application "Music"
-    set results to (every track of playlist "Library" whose artist contains "artist name")
-    set output to ""
-    repeat with t in results
-        set output to output & name of t & " - " & album of t & linefeed
-    end repeat
-    return output
-end tell'
-
-# Search by album
-osascript -e 'tell application "Music"
-    set results to (every track of playlist "Library" whose album contains "album name")
-    set output to ""
-    repeat with t in results
-        set output to output & name of t & " - " & artist of t & linefeed
-    end repeat
-    return output
-end tell'
+ceol playlist list                           # list all playlists
+ceol playlist tracks "Working Vibes"         # list tracks in playlist
+ceol playlist create "New Playlist"          # create empty playlist
+ceol playlist delete "Old Playlist"          # delete (via AppleScript)
+ceol playlist add "Working Vibes" "Song" "Artist"  # add track to playlist
+ceol playlist add "P1,P2" "Song" "Artist"    # add to multiple playlists
+ceol playlist remove "Playlist" "Song"       # remove track
+ceol playlist share "Playlist" --imessage "+1234567890"  # share via iMessage
+ceol playlist share "Playlist" --email "a@b.com"         # share via email
+ceol playlist temp "Song1" "Artist1" "Song2" "Artist2"   # temp playlist, play, cleanup later
+ceol playlist create-from "Song1" "Artist1" "Song2" "Artist2" --name "My Mix"  # create + populate
+ceol playlist cleanup                        # delete all __temp__ playlists
 ```
 
-### Play by Artist, Album, or Song
-
-AppleScript doesn't have a direct "play this album" command, so the approach is: search the library, then play the results. This works well and is reliable.
+## Discovery (requires user token)
 
 ```bash
-# Play an album — find all tracks from that album and play the first one
-# (Music will continue playing the album in order)
-osascript -e 'tell application "Music"
-    set results to (every track of playlist "Library" whose album contains "Album Name")
-    if (count of results) > 0 then
-        play item 1 of results
-    else
-        return "No tracks found for that album"
-    end if
-end tell'
-
-# Play all songs by an artist
-osascript -e 'tell application "Music"
-    set results to (every track of playlist "Library" whose artist contains "Artist Name")
-    if (count of results) > 0 then
-        play item 1 of results
-    else
-        return "No tracks found for that artist"
-    end if
-end tell'
-
-# Play a specific song
-osascript -e 'tell application "Music"
-    set results to (every track of playlist "Library" whose name contains "Song Name")
-    if (count of results) > 0 then
-        play item 1 of results
-    else
-        return "No tracks found with that name"
-    end if
-end tell'
-
-# Play a specific song by a specific artist (narrow search)
-osascript -e 'tell application "Music"
-    set results to (every track of playlist "Library" whose name contains "Song Name" and artist contains "Artist Name")
-    if (count of results) > 0 then
-        play item 1 of results
-    else
-        return "No matching track found"
-    end if
-end tell'
-
-# List all albums in the library (useful for browsing — can be slow on large libraries)
-osascript -e 'tell application "Music"
-    set albumList to {}
-    set allTracks to every track of playlist "Library"
-    repeat with t in allTracks
-        set albumName to album of t
-        if albumName is not in albumList then
-            set end of albumList to albumName
-        end if
-    end repeat
-    return albumList
-end tell'
+ceol similar                                 # similar to now playing
+ceol similar "Song" "Artist"                 # similar to specific track
+ceol suggest 10                              # suggest tracks from now playing
+ceol suggest 10 --from "Working Vibes"       # suggest from playlist vibe
+ceol new-releases --like-current             # new releases from current artist
+ceol new-releases --artist "Fouk"            # new releases from specific artist
+ceol mix --artists "Fouk,Floating Points" --count 20 --name "Friday Mix"  # mixed playlist
 ```
 
-### Queue Management
+## Auth Management
 
 ```bash
-# Add a track to Up Next (by searching for it first)
-osascript -e 'tell application "Music"
-    set results to (every track of playlist "Library" whose name contains "Song Name")
-    if (count of results) > 0 then
-        play item 1 of results
-    end if
-end tell'
+ceol auth status                             # check config + token status
+ceol auth setup                              # guided setup (key ID, team ID, .p8 key)
+ceol auth                                    # open browser for user token
+ceol auth set-token <TOKEN>                  # save user token from browser
 ```
 
-Note: AppleScript's queue management is limited. For "add to Up Next" functionality, the user may need to interact with the Music app directly or use a workaround playlist.
+## Auth Tiers
 
-### Create a Playlist
+| Tier | What works | What doesn't |
+|------|-----------|--------------|
+| No auth | play, pause, skip, back, stop, now, shuffle, repeat, speaker, vol | search, add, playlist (API), similar, suggest, new-releases, mix |
+| Developer token only | Above + search | add, playlist (API), similar, suggest, new-releases, mix |
+| Both tokens | Everything | — |
+
+## Workflow: Complex Requests
+
+For multi-step requests like "play Fouk on the kitchen speaker at 60%", compose commands:
 
 ```bash
-# Create a new empty playlist
-osascript -e 'tell application "Music" to make new playlist with properties {name:"My New Playlist"}'
-
-# Create a playlist and add tracks to it
-osascript -e 'tell application "Music"
-    set newList to make new playlist with properties {name:"My New Playlist"}
-    set results to (every track of playlist "Library" whose artist contains "Artist Name")
-    repeat with t in results
-        duplicate t to newList
-    end repeat
-end tell'
+ceol speaker set "Kitchen"
+ceol vol Kitchen 60
+ceol play --playlist "Working Vibes"
 ```
 
-## AirPlay Control
-
-This is the key differentiator. AppleScript can discover, list, and route audio to AirPlay speakers — including multi-room grouping.
-
-### Discover Available AirPlay Devices
-
-Always run this first before any speaker operation. Speaker names are user-configured and can be anything.
+For "find me something like what's playing and make a playlist":
 
 ```bash
-# List all AirPlay device names
-osascript -e 'tell application "Music" to get name of every AirPlay device'
-
-# List devices with full details (name, selected, volume, kind)
-osascript -e 'tell application "Music"
-    set deviceList to every AirPlay device
-    set output to ""
-    repeat with d in deviceList
-        set output to output & name of d & " | selected: " & selected of d & " | volume: " & sound volume of d & " | kind: " & kind of d & linefeed
-    end repeat
-    return output
-end tell'
+ceol similar --json                          # get similar tracks
+ceol playlist create "Discovered"
+# For each track: ceol playlist add "Discovered" "Title" "Artist"
 ```
 
-### Switch to a Single Speaker
+## Output Modes
 
-Deselect everything else first so audio only goes to the target:
+- **Default:** Human-readable text for terminal
+- **`--json`:** Structured JSON for scripting and Claude
 
-```bash
-osascript -e 'tell application "Music"
-    set allDevices to every AirPlay device
-    repeat with d in allDevices
-        set selected of d to false
-    end repeat
-    set selected of AirPlay device "Kitchen" to true
-end tell'
-```
-
-### Multi-Room: Add a Speaker to the Current Group
-
-If the user says "also play in the bedroom" or "add the bedroom", just select it without deselecting others:
-
-```bash
-# Add a speaker to the active group
-osascript -e 'tell application "Music"
-    set selected of AirPlay device "Bedroom" to true
-end tell'
-```
-
-### Multi-Room: Remove a Speaker from the Group
-
-```bash
-# Remove a speaker from the active group
-osascript -e 'tell application "Music"
-    set selected of AirPlay device "Bedroom" to false
-end tell'
-```
-
-### Multi-Room: Set Up a Specific Group
-
-Deselect all, then select only the ones you want:
-
-```bash
-# Play on Kitchen and Bedroom only
-osascript -e 'tell application "Music"
-    set allDevices to every AirPlay device
-    repeat with d in allDevices
-        set selected of d to false
-    end repeat
-    set selected of AirPlay device "Kitchen" to true
-    set selected of AirPlay device "Bedroom" to true
-end tell'
-```
-
-### Per-Speaker Volume in a Group
-
-Each AirPlay device has its own volume (0-100), independent of global volume:
-
-```bash
-# Set volume on a specific speaker
-osascript -e 'tell application "Music" to set sound volume of AirPlay device "Kitchen" to 75'
-
-# Get volume of a specific speaker
-osascript -e 'tell application "Music" to get sound volume of AirPlay device "Kitchen"'
-
-# Quieter in the bedroom, louder in the kitchen
-osascript -e 'tell application "Music"
-    set sound volume of AirPlay device "Kitchen" to 70
-    set sound volume of AirPlay device "Bedroom" to 30
-end tell'
-```
-
-### Show Currently Active Speakers
-
-```bash
-osascript -e 'tell application "Music"
-    set deviceList to every AirPlay device
-    set output to ""
-    repeat with d in deviceList
-        if selected of d then
-            set output to output & name of d & " (vol: " & sound volume of d & ")" & linefeed
-        end if
-    end repeat
-    if output is "" then
-        return "No AirPlay devices currently selected"
-    end if
-    return output
-end tell'
-```
-
-## AirPods & Bluetooth Headphones
-
-AirPods (and other Bluetooth audio devices) appear as AirPlay devices in the Music app — so the same commands work. The device name is typically the user's AirPods name (e.g., "Anthony's AirPods Pro", "AirPods").
-
-### Switch to AirPods
-
-```bash
-# First discover devices to find the exact AirPods name
-osascript -e 'tell application "Music" to get name of every AirPlay device'
-
-# Switch output to AirPods (deselect all speakers first)
-osascript -e 'tell application "Music"
-    set allDevices to every AirPlay device
-    repeat with d in allDevices
-        set selected of d to false
-    end repeat
-    set selected of AirPlay device "Anthony'\''s AirPods Pro" to true
-end tell'
-```
-
-Note the escaped apostrophe (`'\''`) — AirPods names often contain the user's name with an apostrophe. In bash, you close the single quote, add an escaped quote, then reopen: `'Anthony'\''s AirPods Pro'`.
-
-### Switch from AirPods Back to a Speaker
-
-```bash
-osascript -e 'tell application "Music"
-    set allDevices to every AirPlay device
-    repeat with d in allDevices
-        set selected of d to false
-    end repeat
-    set selected of AirPlay device "Kitchen" to true
-end tell'
-```
-
-### Check if AirPods Are Connected
-
-AirPods will only appear in the AirPlay device list if they're connected to the Mac via Bluetooth. If they're not showing up, the user needs to connect them first (via Bluetooth settings or by opening the AirPods case near the Mac).
-
-```bash
-# Check if a specific device is available and selected
-osascript -e 'tell application "Music"
-    try
-        set isAvailable to available of AirPlay device "Anthony'\''s AirPods Pro"
-        set isSelected to selected of AirPlay device "Anthony'\''s AirPods Pro"
-        return "Available: " & isAvailable & ", Selected: " & isSelected
-    on error
-        return "AirPods not found — they may not be connected via Bluetooth"
-    end try
-end tell'
-```
-
-## Workflow Examples
-
-**"Play Working Vibes on the kitchen speaker"**
-1. Discover devices → confirm "Kitchen" exists
-2. Switch to Kitchen (deselect all, select Kitchen)
-3. Play playlist "Working Vibes"
-4. Report back
-
-**"Also add the bedroom speaker and turn it down a bit"**
-1. Add Bedroom to group (select without deselecting others)
-2. Set Bedroom volume to 30
-3. Confirm the active group
-
-**"Switch to the Daft Punk album"**
-1. Search library for album containing "Daft Punk"
-2. Play the first result
-3. Report what's now playing
-
-**"Turn the kitchen up to 80"**
-1. Set Kitchen AirPlay device volume to 80
-2. Confirm
-
-**"Switch to my AirPods"**
-1. Discover devices → find the AirPods name
-2. Deselect all speakers, select the AirPods device
-3. Confirm output switched
-
-**"Remove the bedroom from the group"**
-1. Deselect Bedroom only (leave others selected)
-2. Show remaining active speakers
-
-**"Play my most played and list the tracks"**
-1. Find the smart playlist → "Top 25 Most Played"
-2. Play it
-3. List all tracks with artist names in a numbered list
-
-Always discover devices and playlists first rather than guessing names. Speaker and playlist names are user-configured and can be anything.
+Always use `--json` when you need to parse the output programmatically.
 
 ## Error Handling
 
-Common issues and how to handle them:
-
-- **"Parameter error (-50)"** — This often happens when combining AirPlay device selection with playlist playback in a single `tell` block. Split them into separate `osascript` calls: route audio first, then play.
-- **"Music got an error: AppleEvent timed out"** — The Music app may not be running. Try `osascript -e 'tell application "Music" to activate'` first, wait a moment, then retry.
-- **"execution error: Music got an error: Can't get AirPlay device"** — The device name doesn't match. Re-run the device list command and check for exact spelling (names are case-sensitive).
-- **Automation permission denied** — The user needs to go to System Settings → Privacy & Security → Automation and enable access for their terminal app.
-- **No tracks found** — The search term may be too specific. Try a shorter or broader search. AppleScript `contains` is case-insensitive, so casing isn't the issue — it's usually a spelling mismatch.
-
-## Tips
-
-- **Split AirPlay routing and playback into separate `osascript` calls.** Combining speaker selection and `play playlist` in a single `tell` block can trigger a "Parameter error (-50)". Route first, then play in a second call.
-- Always list AirPlay devices before trying to route — don't assume device names
-- When playing a playlist, confirm the exact playlist name first by listing playlists
-- Combine operations in a single `tell` block when possible to reduce latency
-- The Music app needs to be running for commands to work — activate it if needed
-- AppleScript search is case-insensitive for `contains` comparisons
-- To "change" playlists, just play the new one — it replaces the current queue automatically
-- To switch speakers, always deselect all first then select the target(s)
-- To add/remove a speaker from a group, just set its `selected` property without touching others
-- If the user wants Apple Music catalog content (not in their library), they'll need to search in the Music app UI — AppleScript primarily accesses the local library
+- **"Config not found"** — Run `ceol auth setup`
+- **"User token required"** — Run `ceol auth`
+- **"API request failed with status 401/403"** — Token expired, run `ceol auth` again
+- **"No tracks found"** — Try a broader search query
+- **Speaker commands fail** — Check exact speaker name with `ceol speaker list`

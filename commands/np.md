@@ -6,17 +6,17 @@ disable-model-invocation: true
 
 Now playing:
 
-!`osascript -e 'tell application "Music"
-    if player state is playing then
-        set trackName to name of current track
-        set trackArtist to artist of current track
-        set trackAlbum to album of current track
-        return "▶ " & trackName & " — " & trackArtist & " (" & trackAlbum & ")"
-    else if player state is paused then
-        set trackName to name of current track
-        set trackArtist to artist of current track
-        return "⏸ " & trackName & " — " & trackArtist & " (paused)"
-    else
-        return "■ Nothing playing"
-    end if
-end tell' 2>/dev/null || echo "■ Music app not running"`
+!`CEOL="${CEOL:-ceol}"
+if command -v "$CEOL" &>/dev/null; then
+    $CEOL now
+else
+    osascript -e 'tell application "Music"
+        if player state is playing then
+            return "▶ " & name of current track & " — " & artist of current track & " (" & album of current track & ")"
+        else if player state is paused then
+            return "⏸ " & name of current track & " — " & artist of current track & " (paused)"
+        else
+            return "■ Nothing playing"
+        end if
+    end tell' 2>/dev/null || echo "■ Music app not running"
+fi`

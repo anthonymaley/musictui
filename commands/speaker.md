@@ -8,65 +8,47 @@ arguments:
 disable-model-invocation: true
 ---
 
-!`INPUT="$ARGUMENTS"
+!`CEOL="${CEOL:-ceol}"
+INPUT="$ARGUMENTS"
 if [ -z "$INPUT" ]; then INPUT="list"; fi
 
 LOWER_INPUT=$(echo "$INPUT" | tr "[:upper:]" "[:lower:]")
 
+if ! command -v "$CEOL" &>/dev/null; then
+    echo "ceol not installed. Run: scripts/install.sh"
+    exit 1
+fi
+
 # Handle list
 if [ "$LOWER_INPUT" = "list" ]; then
-    osascript -e 'tell application "Music"
-        set deviceList to every AirPlay device
-        set output to ""
-        repeat with d in deviceList
-            set marker to "  "
-            if selected of d then set marker to "▶ "
-            set output to output & marker & name of d & " [" & sound volume of d & "]" & linefeed
-        end repeat
-        return output
-    end tell' 2>/dev/null
+    $CEOL speaker list
     exit 0
 fi
 
 # Handle airpods
 if [ "$LOWER_INPUT" = "airpods" ]; then
-    DEVICES=$(osascript -e 'tell application "Music" to get name of every AirPlay device' 2>/dev/null)
-    MATCH=$(echo "$DEVICES" | tr "," "\n" | sed "s/^ *//" | grep -i "airpods" | head -1)
+    MATCH=$($CEOL speaker list --json 2>/dev/null | grep -oi '"name":"[^"]*airpods[^"]*"' | head -1 | cut -d'"' -f4)
     if [ -n "$MATCH" ]; then
-        osascript -e "tell application \"Music\"
-            set allDevices to every AirPlay device
-            repeat with d in allDevices
-                set selected of d to false
-            end repeat
-            set selected of AirPlay device \"$MATCH\" to true
-        end tell" 2>/dev/null
-        echo "🎧 $MATCH"
+        $CEOL speaker set "$MATCH"
     else
         echo "No AirPods found — check Bluetooth"
     fi
     exit 0
 fi
 
-DEVICES=$(osascript -e 'tell application "Music" to get name of every AirPlay device' 2>/dev/null)
-find_match() { echo "$DEVICES" | tr "," "\n" | sed "s/^ *//" | grep -i "$1" | head -1; }
-show_active() {
-    osascript -e 'tell application "Music"
-        set deviceList to every AirPlay device
-        set output to ""
-        repeat with d in deviceList
-            if selected of d then
-                if output is not "" then set output to output & ", "
-                set output to output & name of d & " [" & sound volume of d & "]"
-            end if
-        end repeat
-        return "🔊 " & output
-    end tell' 2>/dev/null
+# Match a speaker name from the live device list
+find_match() {
+    local target_lower=$(echo "$1" | tr '[:upper:]' '[:lower:]')
+    $CEOL speaker list --json 2>/dev/null | grep -o '"name":"[^"]*"' | cut -d'"' -f4 | while IFS= read -r dev; do
+        dev_lower=$(echo "$dev" | tr '[:upper:]' '[:lower:]')
+        if echo "$dev_lower" | grep -qi "$target_lower"; then
+            echo "$dev"
+            return
+        fi
+    done
 }
 
-# Parse chained actions by splitting on action keywords
-# e.g. "remove kitchen add julie office" → "remove kitchen" + "add julie office"
-# e.g. "only kitchen" → "only kitchen"
-# e.g. "kitchen" (bare name) → "only kitchen"
+# Parse chained actions: "remove kitchen add julie office" → separate commands
 ACTIONS=""
 CURRENT_ACTION=""
 for word in $INPUT; do
@@ -87,7 +69,6 @@ if [ -n "$CURRENT_ACTION" ]; then
     ACTIONS="${ACTIONS}${ACTIONS:+|}${CURRENT_ACTION}"
 fi
 
-# Process each action
 IFS='|' read -ra ACTION_LIST <<< "$ACTIONS"
 for action_entry in "${ACTION_LIST[@]}"; do
     ACTION_WORD=$(echo "$action_entry" | awk '{print $1}' | tr "[:upper:]" "[:lower:]")
@@ -95,50 +76,21 @@ for action_entry in "${ACTION_LIST[@]}"; do
     case "$ACTION_WORD" in
         add)
             MATCH=$(find_match "$SPEAKER_NAME")
-            if [ -n "$MATCH" ]; then
-                osascript -e "tell application \"Music\" to set selected of AirPlay device \"$MATCH\" to true" 2>/dev/null
-            else
-                echo "No device matching: $SPEAKER_NAME"
-            fi
+            if [ -n "$MATCH" ]; then $CEOL speaker add "$MATCH"; else echo "No device matching: $SPEAKER_NAME"; fi
             ;;
         remove)
             MATCH=$(find_match "$SPEAKER_NAME")
-            if [ -n "$MATCH" ]; then
-                osascript -e "tell application \"Music\" to set selected of AirPlay device \"$MATCH\" to false" 2>/dev/null
-            else
-                echo "No device matching: $SPEAKER_NAME"
-            fi
+            if [ -n "$MATCH" ]; then $CEOL speaker remove "$MATCH"; else echo "No device matching: $SPEAKER_NAME"; fi
             ;;
         only)
             MATCH=$(find_match "$SPEAKER_NAME")
-            if [ -n "$MATCH" ]; then
-                osascript -e "tell application \"Music\"
-                    set allDevices to every AirPlay device
-                    repeat with d in allDevices
-                        set selected of d to false
-                    end repeat
-                    set selected of AirPlay device \"$MATCH\" to true
-                end tell" 2>/dev/null
-            else
-                echo "No device matching: $SPEAKER_NAME"
-            fi
+            if [ -n "$MATCH" ]; then $CEOL speaker set "$MATCH"; else echo "No device matching: $SPEAKER_NAME"; fi
             ;;
         *)
-            # Bare speaker name — treat as "only"
             MATCH=$(find_match "$action_entry")
-            if [ -n "$MATCH" ]; then
-                osascript -e "tell application \"Music\"
-                    set allDevices to every AirPlay device
-                    repeat with d in allDevices
-                        set selected of d to false
-                    end repeat
-                    set selected of AirPlay device \"$MATCH\" to true
-                end tell" 2>/dev/null
-            else
-                echo "No device matching: $action_entry"
-            fi
+            if [ -n "$MATCH" ]; then $CEOL speaker set "$MATCH"; else echo "No device matching: $action_entry"; fi
             ;;
     esac
 done
 
-show_active`
+$CEOL speaker list 2>/dev/null | grep "▶"`
