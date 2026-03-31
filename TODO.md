@@ -2,18 +2,18 @@
 
 ## Current Session
 
-- [x] Enhanced status line: now shows track, speakers, and per-speaker volume
-- [x] Converted all commands to `disable-model-invocation: true` — no AI, no Bash tool calls in chat
-- [x] New commands: `/music:play [query]`, `/music:vol`, `/music:shuffle`
-- [x] Rewrote `/music:speaker` as inline bash with fuzzy device matching
-- [x] Updated README with new commands and status line docs
-- [ ] **Not yet tested**: the new `disable-model-invocation` commands need testing after `/reload-plugins` — especially `$ARGUMENTS` template variable behavior in inline bash
+- [x] All `disable-model-invocation` commands tested and working — `$ARGUMENTS` works correctly
+- [x] Tested `/music:vol julie office 66` — per-speaker volume works
+- [x] Tested `/music:speaker add kitchen`, `/music:speaker remove kitchen` — works
+- [x] Added chained actions to `/music:speaker` — e.g. `remove kitchen add julie office`
+- [x] Added `only` keyword to `/music:speaker` — e.g. `only kitchen`
+- [ ] Discovered: `/music:stop` doesn't support per-speaker stop (stops all playback)
+- [ ] Discovered: `/music:speaker stop kitchen` falls through to bare name match — no `stop` action
 
 ## What's Next
 
-- Test all new commands after reload: `/music:play Working Vibes`, `/music:vol 60`, `/music:shuffle`, `/music:speaker kitchen`
-- If `$ARGUMENTS` doesn't work in `disable-model-invocation` commands, fall back to AI-driven with `allowed-tools: Bash` and a single-call prompt
-- Bump version to v0.3.0 once commands are verified
+- Consider enhancing `/music:stop` to support per-speaker: `/music:stop kitchen` removes speaker, no args stops all
+- Bump version to v0.3.0 — all commands verified working
 - Consider adding `/music:list` command to list playlists without AI
 
 ## Backlog
