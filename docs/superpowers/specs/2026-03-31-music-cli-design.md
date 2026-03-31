@@ -58,9 +58,13 @@ Commands route to the correct backend automatically:
 | now, shuffle, repeat | AppleScript | No |
 | speaker, vol | AppleScript | No |
 | search | REST API | Developer token only |
-| add, playlist (write ops) | REST API | Developer + user token |
+| add | REST API | Developer + user token |
+| playlist list, playlist tracks | REST API | Developer + user token |
+| playlist create/delete/add/remove/share | REST API | Developer + user token |
 | similar, suggest, new-releases | REST API | Developer + user token |
-| playlist (playback) | Both | Depends on operation |
+| playlist (playback) | Both | Developer + user token |
+
+Note: All `/v1/me/...` endpoints (including playlist reads like `list` and `tracks`) require the Music User Token. Only catalog search (`/v1/catalog/...`) works with the developer token alone.
 
 ### Auth Manager
 
@@ -220,11 +224,25 @@ Share generates an Apple Music URL for the playlist, then sends it via the platf
 
 ## Temp Playlist Lifecycle
 
-1. `music playlist temp` creates a playlist with a `__temp__` prefix
-2. Starts playback
-3. A background monitor (or next CLI invocation) checks if playback stopped
-4. If the temp playlist finished, delete it automatically
-5. Fallback: `music playlist cleanup` manually deletes all temp playlists
+1. `music playlist temp` creates a playlist with a `__temp__` prefix via REST API
+2. Polls for library consistency — the playlist may not appear in AppleScript immediately after REST API creation. The CLI polls `osascript` for the playlist name up to 10 times with 1-second intervals before timing out.
+3. Once visible, starts playback via AppleScript
+4. A background monitor (or next CLI invocation) checks if playback stopped
+5. If the temp playlist finished, delete it automatically via REST API
+6. Fallback: `music playlist cleanup` manually deletes all `__temp__` playlists
+
+### Library Consistency
+
+Apple Music does not guarantee that resources created via the REST API (`POST /v1/me/library/playlists`) are immediately visible to AppleScript or the Music app. All hybrid flows that create/populate via REST API and then hand off to AppleScript for playback must include a poll-and-retry step:
+
+```
+REST API: create/populate playlist
+  → poll: osascript "get name of every playlist" until new playlist appears
+  → timeout after 10s with user-facing error
+  → AppleScript: play playlist
+```
+
+This applies to: `playlist temp`, `playlist create-from`, `mix`, and any flow that writes via REST then reads via AppleScript.
 
 ## Project Structure
 
@@ -255,19 +273,44 @@ apple-music/
 └── .claude-plugin/
 ```
 
+## Installation & Binary Distribution
+
+The `music` binary must be callable by name from slash commands, the skill, and the status line script. The plugin handles this at install time:
+
+**Build step:** The plugin includes a `scripts/install.sh` that:
+1. Runs `swift build -c release` in `tools/music-cli/`
+2. Symlinks the built binary to `~/.local/bin/music` (or another PATH location)
+3. Verifies the binary is callable: `music --version`
+
+**Plugin references use the full path as fallback:** All slash commands and scripts reference the binary as:
+```bash
+MUSIC_CLI="${MUSIC_CLI:-music}"
+```
+This allows overriding via environment variable if the user prefers a non-PATH location.
+
+**First-run experience:** If the binary isn't found, commands fall back to raw `osascript` (preserving current behavior) and print a one-time hint: "Run `scripts/install.sh` to enable catalog features."
+
 ## Plugin Integration
 
 ### Slash Commands
 
-Existing commands (`/play`, `/vol`, `/speaker`, etc.) are rewritten as thin wrappers that call the `music` CLI. Example `/play`:
+Existing commands (`/play`, `/vol`, `/speaker`, etc.) are rewritten to call the `music` CLI, but each command is responsible for translating its current argument grammar into the appropriate CLI flags. This is not a passthrough — each command parses its own input.
+
+The current `/play` command accepts free-form text like `play radiohead on kitchen at 60`. The wrapper must decompose this into separate CLI calls:
 
 ```markdown
 ---
 name: play
 description: Play music
 ---
-Run: `music play` with the user's arguments
+Parse the user's input to extract query, speaker, and volume.
+Then invoke the appropriate `music` commands:
+  - `music speaker set <speaker>` (if speaker specified)
+  - `music vol <speaker> <level>` (if volume specified)
+  - `music play --song <query>` or `music play --playlist <name>`
 ```
+
+Each slash command preserves its existing user-facing contract. The CLI provides the primitives; the slash commands provide the natural-language-friendly grammar.
 
 ### Skill (SKILL.md)
 
@@ -275,10 +318,19 @@ Updated to document the full `music` CLI surface. Claude uses `music --json` var
 
 ### Status Line
 
+The status line script consumes `--json` output and formats it for the status bar:
+
 ```bash
 #!/bin/bash
-music now --statusline 2>/dev/null
+JSON=$(music now --json 2>/dev/null)
+if [ -n "$JSON" ]; then
+    TRACK=$(echo "$JSON" | jq -r '.track // empty')
+    ARTIST=$(echo "$JSON" | jq -r '.artist // empty')
+    [ -n "$TRACK" ] && echo "$TRACK — $ARTIST"
+fi
 ```
+
+There is no `--statusline` output mode. The CLI supports exactly two output modes: default (human-readable text) and `--json`. Any specialized formatting is the caller's responsibility.
 
 ## Dependencies
 
@@ -307,4 +359,4 @@ music auth setup
 
 ## Open Questions
 
-None — all questions resolved during brainstorming.
+1. **Playlist delete/remove/share API endpoints** — Need to verify exact REST API endpoints and behavior for these operations before implementation. The Apple Music API documentation for library playlist mutation is sparse; may need to test empirically.
