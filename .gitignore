@@ -1,4 +1,2 @@
-.DS_Store
-kivna/input/
-kivna/output/
-kivna/.active-modes
+tools/ceol/.build/
+tools/ceol/Package.resolved
