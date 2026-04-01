@@ -1,6 +1,36 @@
 import ArgumentParser
 import Foundation
 
+enum SpeakerAction: Equatable {
+    case interactive
+    case list
+    case add(name: String)
+    case addWithVolume(name: String, volume: Int)
+    case remove(name: String)
+    case exclusive(name: String)
+    case indices([Int])
+}
+
+struct SpeakerParser {
+    static func parse(_ args: [String]) -> SpeakerAction {
+        guard !args.isEmpty else { return .interactive }
+        if args.count == 1 && args[0].lowercased() == "list" { return .list }
+        let ints = args.compactMap { Int($0) }
+        if ints.count == args.count { return .indices(ints) }
+        let lastArg = args.last!.lowercased()
+        if lastArg == "stop" {
+            return .remove(name: args.dropLast().joined(separator: " "))
+        }
+        if lastArg == "only" {
+            return .exclusive(name: args.dropLast().joined(separator: " "))
+        }
+        if let vol = Int(lastArg), (0...100).contains(vol), args.count >= 2 {
+            return .addWithVolume(name: args.dropLast().joined(separator: " "), volume: vol)
+        }
+        return .add(name: args.joined(separator: " "))
+    }
+}
+
 struct Speaker: ParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Manage AirPlay speakers.",
