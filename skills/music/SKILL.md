@@ -115,21 +115,37 @@ music auth set-token <TOKEN>                  # save user token from browser
 
 ## Workflow: Complex Requests
 
-For multi-step requests like "play Fouk on the kitchen speaker at 60%", compose commands:
+**Minimize tool calls.** Chain independent commands with `&&` in a SINGLE bash call where possible. Never add tracks one at a time — use batch commands.
+
+For multi-step requests like "play Fouk on the kitchen speaker at 60%":
 
 ```bash
-music speaker set "Kitchen"
-music volume Kitchen 60
-music play --playlist "Working Vibes"
+# ONE bash call — chain with &&
+music speaker set "Kitchen" && music volume Kitchen 60 && music play --playlist "Working Vibes"
 ```
 
-For "find me something like what's playing and make a playlist":
+For "find house tracks and make a playlist" — search, then use `create-from` (ONE command for all tracks):
 
 ```bash
-music similar --json                          # get similar tracks
-music playlist create "Discovered"
-# For each track: music playlist add "Discovered" "Title" "Artist"
+# Step 1: search to find tracks
+music search "house Fouk Chris Lake FISHER" --limit 20 --json
 ```
+
+```bash
+# Step 2: ONE create-from call with all tracks (resilient — skips failures, doesn't crash)
+music playlist create-from "Losing It" "FISHER" "Coconuts" "Fouk" "Stay With Me" "Chris Lake" --name "House Vibes"
+```
+
+```bash
+# Step 3: play it
+music shuffle on && music play --playlist "House Vibes"
+```
+
+**Rules:**
+- ALWAYS use `create-from` for building playlists from search results — never loop `playlist add` per track
+- Chain speaker + volume + play into a single `&&` bash call
+- Use `--json` on search to get structured results, then pick tracks for `create-from`
+- `create-from` handles errors gracefully — failed tracks are skipped and reported at the end
 
 ## Output Modes
 

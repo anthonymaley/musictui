@@ -201,12 +201,17 @@ struct PlaylistAdd: ParsableCommand {
         let playlistNames = playlists.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
 
         // Give library a moment to sync
-        try syncRun { try await Task.sleep(nanoseconds: 2_000_000_000) }
+        try syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
 
+        let escapedTitle = song.title.replacingOccurrences(of: "\"", with: "\\\"")
+        let escapedArtist = song.artist.replacingOccurrences(of: "\"", with: "\\\"")
         for pl in playlistNames {
             _ = try syncRun {
                 try await backend.runMusic("""
-                    set results to (every track of playlist "Library" whose name contains "\(song.title)" and artist contains "\(song.artist)")
+                    set results to (every track of playlist "Library" whose name is "\(escapedTitle)" and artist is "\(escapedArtist)")
+                    if (count of results) = 0 then
+                        set results to (every track of playlist "Library" whose name contains "\(escapedTitle)" and artist contains "\(escapedArtist)")
+                    end if
                     if (count of results) > 0 then
                         duplicate item 1 of results to playlist "\(pl)"
                     end if
@@ -304,11 +309,14 @@ struct PlaylistTemp: ParsableCommand {
         }
 
         for i in stride(from: 0, to: items.count, by: 2) {
-            let title = items[i]
-            let artist = items[i + 1]
+            let title = items[i].replacingOccurrences(of: "\"", with: "\\\"")
+            let artist = items[i + 1].replacingOccurrences(of: "\"", with: "\\\"")
             _ = try syncRun {
                 try await backend.runMusic("""
-                    set results to (every track of playlist "Library" whose name contains "\(title)" and artist contains "\(artist)")
+                    set results to (every track of playlist "Library" whose name is "\(title)" and artist is "\(artist)")
+                    if (count of results) = 0 then
+                        set results to (every track of playlist "Library" whose name contains "\(title)" and artist contains "\(artist)")
+                    end if
                     if (count of results) > 0 then
                         duplicate item 1 of results to playlist "\(name)"
                     end if
@@ -347,29 +355,49 @@ struct PlaylistCreateFrom: ParsableCommand {
             try await backend.runMusic("make new playlist with properties {name:\"\(name)\"}")
         }
 
-        var addedCount = 0
+        var added: [(title: String, artist: String)] = []
+        var failed: [(title: String, artist: String)] = []
         for i in stride(from: 0, to: items.count, by: 2) {
             let title = items[i]
             let artist = items[i + 1]
-            let songs = try syncRun { try await api.searchSongs(query: "\(title) \(artist)", limit: 1) }
-            if let song = songs.first {
-                try syncRun { try await api.addToLibrary(songIDs: [song.id]) }
-                print("  + \(song.title) — \(song.artist)")
-                addedCount += 1
-            } else {
-                print("  ✗ Not found: \(title) — \(artist)")
+            do {
+                let songs = try syncRun { try await api.searchSongs(query: "\(title) \(artist)", limit: 1) }
+                if let song = songs.first {
+                    do {
+                        try syncRun { try await api.addToLibrary(songIDs: [song.id]) }
+                        added.append((title: song.title, artist: song.artist))
+                        print("  + \(song.title) — \(song.artist)")
+                    } catch {
+                        failed.append((title: title, artist: artist))
+                        print("  ✗ Failed to add: \(title) — \(artist)")
+                    }
+                } else {
+                    failed.append((title: title, artist: artist))
+                    print("  ✗ Not found: \(title) — \(artist)")
+                }
+            } catch {
+                failed.append((title: title, artist: artist))
+                print("  ✗ Search failed: \(title) — \(artist)")
             }
         }
 
-        // Wait for library sync then add to playlist
-        try syncRun { try await Task.sleep(nanoseconds: 3_000_000_000) }
+        guard !added.isEmpty else {
+            print("No tracks were added. Playlist '\(name)' is empty.")
+            return
+        }
 
-        for i in stride(from: 0, to: items.count, by: 2) {
-            let title = items[i]
-            let artist = items[i + 1]
+        // Wait for library sync then add to playlist
+        try syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
+
+        for track in added {
+            let escapedTitle = track.title.replacingOccurrences(of: "\"", with: "\\\"")
+            let escapedArtist = track.artist.replacingOccurrences(of: "\"", with: "\\\"")
             _ = try syncRun {
                 try await backend.runMusic("""
-                    set results to (every track of playlist "Library" whose name contains "\(title)" and artist contains "\(artist)")
+                    set results to (every track of playlist "Library" whose name is "\(escapedTitle)" and artist is "\(escapedArtist)")
+                    if (count of results) = 0 then
+                        set results to (every track of playlist "Library" whose name contains "\(escapedTitle)" and artist contains "\(escapedArtist)")
+                    end if
                     if (count of results) > 0 then
                         duplicate item 1 of results to playlist "\(name)"
                     end if
@@ -377,7 +405,10 @@ struct PlaylistCreateFrom: ParsableCommand {
             }
         }
 
-        print("Created '\(name)' with \(addedCount) tracks.")
+        print("Created '\(name)' with \(added.count) tracks.")
+        if !failed.isEmpty {
+            print("Failed (\(failed.count)): \(failed.map { "\($0.title) — \($0.artist)" }.joined(separator: ", "))")
+        }
     }
 }
 

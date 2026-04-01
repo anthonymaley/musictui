@@ -73,7 +73,8 @@ struct RESTAPIBackend {
     func addToLibrary(songIDs: [String]) async throws {
         guard userToken != nil else { throw AuthError.userTokenRequired }
         let ids = songIDs.joined(separator: ",")
-        let (_, status) = try await post("/v1/me/library?ids[songs]=\(ids)")
+        let path = "/v1/me/library?ids%5Bsongs%5D=\(ids)"
+        let (_, status) = try await post(path)
         guard (200...299).contains(status) else {
             if status == 401 || status == 403 { throw AuthError.userTokenExpired(status) }
             throw APIError.requestFailed(status)
