@@ -370,6 +370,14 @@ class TerminalState {
 func isTTY() -> Bool {
     isatty(STDIN_FILENO) != 0 && isatty(STDOUT_FILENO) != 0
 }
+
+/// Returns true if the user typed ONLY "music <command>" with no additional args or flags.
+/// Checks CommandLine.arguments directly so default values can't fool it.
+func isBareInvocation(command: String) -> Bool {
+    let args = CommandLine.arguments.dropFirst() // drop binary path
+    // Expect exactly one arg: the subcommand name itself
+    return args.count == 1 && args.first?.lowercased() == command.lowercased()
+}
 ```
 
 - [ ] **Step 2: Verify it compiles**
@@ -843,13 +851,13 @@ struct SpeakerParser {
 struct Speaker: ParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "Manage AirPlay speakers.",
-        subcommands: [SpeakerList.self, SpeakerSet.self, SpeakerAdd.self, SpeakerRemove.self, SpeakerStop.self],
+        subcommands: [SpeakerSmart.self, SpeakerList.self, SpeakerSet.self, SpeakerAdd.self, SpeakerRemove.self, SpeakerStop.self],
         defaultSubcommand: SpeakerSmart.self
     )
 }
 
 struct SpeakerSmart: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "", abstract: "Smart speaker control.")
+    static let configuration = CommandConfiguration(commandName: "", abstract: "Smart speaker control.", shouldDisplay: false)
     @Argument(help: "Speaker name, index, volume, or keyword (stop/only/list)") var args: [String] = []
     @Flag(name: .long, help: "Output JSON") var json = false
 
@@ -1274,7 +1282,7 @@ struct Play: ParsableCommand {
                     try await backend.runMusic("""
                         set results to (every track of playlist "Library" whose name is "\(escapedTitle)" and artist is "\(escapedArtist)")
                         if (count of results) = 0 then
-                            set results to (every track of playlist "Library" whose name contains "\(escapedTitle)")
+                            set results to (every track of playlist "Library" whose name contains "\(escapedTitle)" and artist contains "\(escapedArtist)")
                         end if
                         if (count of results) > 0 then
                             play item 1 of results
@@ -1513,6 +1521,26 @@ struct Remove: ParsableCommand {
         let title = String(parts[0])
         let artist = String(parts[1])
         let escapedTitle = title.replacingOccurrences(of: "\"", with: "\\\"")
+        let escapedArtist = artist.replacingOccurrences(of: "\"", with: "\\\"")
+
+        // Helper: delete track matching title AND artist from a playlist
+        func deleteTrack(from playlist: String) throws -> Bool {
+            let check = try? syncRun {
+                try await backend.runMusic("""
+                    set matches to (every track of playlist "\(playlist)" whose name is "\(escapedTitle)" and artist is "\(escapedArtist)")
+                    if (count of matches) = 0 then
+                        set matches to (every track of playlist "\(playlist)" whose name contains "\(escapedTitle)" and artist contains "\(escapedArtist)")
+                    end if
+                    if (count of matches) > 0 then
+                        delete item 1 of matches
+                        return "DELETED"
+                    else
+                        return "NOT_FOUND"
+                    end if
+                """)
+            }
+            return check?.trimmingCharacters(in: .whitespacesAndNewlines) == "DELETED"
+        }
 
         if target.isEmpty {
             // Remove from currently playing playlist
@@ -1530,13 +1558,11 @@ struct Remove: ParsableCommand {
                 print("Not playing from a playlist.")
                 throw ExitCode.failure
             }
-            _ = try syncRun {
-                try await backend.runMusic("""
-                    set t to (first track of playlist "\(playlistName)" whose name contains "\(escapedTitle)")
-                    delete t
-                """)
+            if try deleteTrack(from: playlistName) {
+                print("Removed '\(title)' from '\(playlistName)'.")
+            } else {
+                print("'\(title)' not found in '\(playlistName)'.")
             }
-            print("Removed '\(title)' from '\(playlistName)'.")
 
         } else if target.count == 1 && target[0].lowercased() == "all" {
             // Remove from all playlists
@@ -1548,19 +1574,7 @@ struct Remove: ParsableCommand {
                 .map { $0.trimmingCharacters(in: .whitespaces) }
             var removedFrom: [String] = []
             for pl in names {
-                let checkResult = try? syncRun {
-                    try await backend.runMusic("""
-                        set matches to (every track of playlist "\(pl)" whose name contains "\(escapedTitle)")
-                        return (count of matches) as text
-                    """)
-                }
-                if let count = checkResult, Int(count.trimmingCharacters(in: .whitespacesAndNewlines)) ?? 0 > 0 {
-                    _ = try? syncRun {
-                        try await backend.runMusic("""
-                            set t to (first track of playlist "\(pl)" whose name contains "\(escapedTitle)")
-                            delete t
-                        """)
-                    }
+                if (try? deleteTrack(from: pl)) == true {
                     removedFrom.append(pl)
                 }
             }
@@ -1573,13 +1587,11 @@ struct Remove: ParsableCommand {
         } else {
             // Remove from named playlist
             let playlistName = target.joined(separator: " ")
-            _ = try syncRun {
-                try await backend.runMusic("""
-                    set t to (first track of playlist "\(playlistName)" whose name contains "\(escapedTitle)")
-                    delete t
-                """)
+            if try deleteTrack(from: playlistName) {
+                print("Removed '\(title)' from '\(playlistName)'.")
+            } else {
+                print("'\(title)' not found in '\(playlistName)'.")
             }
-            print("Removed '\(title)' from '\(playlistName)'.")
         }
     }
 }
@@ -1628,8 +1640,8 @@ try? cache.writeSongs(songResults)
 let output = OutputFormat(mode: json ? .json : .human)
 if json {
     print(output.render(similar.prefix(limit).map { $0.toDict() }))
-} else if title == nil && artist == nil && limit == 10 && !json && isTTY() {
-    // Bare "music similar" with TTY → interactive (default limit means bare invocation)
+} else if isBareInvocation(command: "similar") && isTTY() {
+    // Bare "music similar" with TTY → interactive
     var items = Array(similar.prefix(limit)).map {
         MultiSelectItem(label: "\($0.title) — \($0.artist)", sublabel: $0.album, selected: false)
     }
@@ -1667,9 +1679,13 @@ func handleSongAction(_ action: MultiSelectAction, songs: [CatalogSong], api: RE
     case .played(let idx):
         let song = songs[idx]
         let escapedTitle = song.title.replacingOccurrences(of: "\"", with: "\\\"")
+        let escapedArtist = song.artist.replacingOccurrences(of: "\"", with: "\\\"")
         let result = try syncRun {
             try await backend.runMusic("""
-                set results to (every track of playlist "Library" whose name contains "\(escapedTitle)")
+                set results to (every track of playlist "Library" whose name is "\(escapedTitle)" and artist is "\(escapedArtist)")
+                if (count of results) = 0 then
+                    set results to (every track of playlist "Library" whose name contains "\(escapedTitle)" and artist contains "\(escapedArtist)")
+                end if
                 if (count of results) > 0 then
                     play item 1 of results
                     return "OK"
@@ -1684,7 +1700,7 @@ func handleSongAction(_ action: MultiSelectAction, songs: [CatalogSong], api: RE
             try syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
             _ = try syncRun {
                 try await backend.runMusic("""
-                    set results to (every track of playlist "Library" whose name contains "\(escapedTitle)")
+                    set results to (every track of playlist "Library" whose name contains "\(escapedTitle)" and artist contains "\(escapedArtist)")
                     if (count of results) > 0 then play item 1 of results
                 """)
             }
@@ -1748,8 +1764,8 @@ try? cache.writeSongs(songResults)
 let output = OutputFormat(mode: json ? .json : .human)
 if json {
     print(output.render(suggestions.map { $0.toDict() }))
-} else if from == nil && !json && isTTY() && count == 10 {
-    // Bare "music suggest" with TTY → interactive (default count means bare invocation)
+} else if isBareInvocation(command: "suggest") && isTTY() {
+    // Bare "music suggest" with TTY → interactive
     var items = suggestions.map {
         MultiSelectItem(label: "\($0.title) — \($0.artist)", sublabel: $0.album, selected: false)
     }
@@ -1978,7 +1994,7 @@ struct Playlist: ParsableCommand {
 }
 
 struct PlaylistBrowse: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "", abstract: "Browse playlists interactively.")
+    static let configuration = CommandConfiguration(commandName: "", abstract: "Browse playlists interactively.", shouldDisplay: false)
 
     func run() throws {
         guard isTTY() else {
