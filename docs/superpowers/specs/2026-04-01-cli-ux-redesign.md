@@ -4,7 +4,7 @@ Smart defaults for common operations, interactive TUI for browsing, machine outp
 
 ## Design Principles
 
-1. **Bare command = interactive.** No args launches TUI mode for browsing and picking.
+1. **Bare browsing command = interactive.** Commands that produce lists (`speaker`, `similar`, `suggest`, `volume`, `playlist`) launch TUI mode when invoked with no args. Action commands (`play`, `pause`, `stop`, `now`) keep their current bare behavior.
 2. **Args = non-interactive.** Positional args trigger smart parsing, print result, exit.
 3. **`--json` = machine output.** Structured JSON for the Claude skill layer. Never shown to humans.
 4. **Named flags stay.** `--song`, `--artist`, `--limit` etc. remain for precise scripting control.
@@ -12,11 +12,20 @@ Smart defaults for common operations, interactive TUI for browsing, machine outp
 
 ## Result Cache
 
-- **File:** `~/.config/music/last-results.json`
-- **Written by:** `search`, `similar`, `suggest`, `new-releases`, `speaker list`
-- **Read by:** `play <N>`, `add <N>`, `playlist add "X" 1 3 5`, `speaker 1 2 5`
-- **Schema per entry:** `{ index, title, artist, album, catalogId, type }` where type is `song` or `speaker`
-- **Lifecycle:** Overwritten on every new result-producing command. No history, just last results.
+Two domain-specific cache files prevent cross-domain index collisions:
+
+- **Songs:** `~/.config/music/last-songs.json`
+  - **Written by:** `search`, `similar`, `suggest`, `new-releases`
+  - **Read by:** `play <N>`, `add <N>`, `playlist add "Name" 1 3 5`, `playlist create "Name" 1 3 5`
+  - **Schema per entry:** `{ index, title, artist, album, catalogId }`
+
+- **Speakers:** `~/.config/music/last-speakers.json`
+  - **Written by:** `speaker list`, `speaker` (interactive TUI on exit)
+  - **Read by:** `speaker 1 2 5`
+  - **Schema per entry:** `{ index, name, selected, volume }`
+
+- **Lifecycle:** Each file is overwritten when its domain produces new results. No history, just last results.
+- **Safety:** `play <N>` only reads from `last-songs.json`. `speaker <N>` only reads from `last-speakers.json`. A command never reads from the wrong domain's cache.
 
 ## Speaker Commands
 
@@ -79,7 +88,8 @@ Speaker routing is NOT handled by `play`. Use `music speaker kitchen && music pl
 | `music search house` | Numbered results list |
 | `music similar "Song" "Artist"` | Numbered similar tracks |
 | `music similar --limit 20` | Non-interactive list with limit |
-| `music suggest` | Numbered suggestions |
+| `music suggest 5` | Numbered suggestions (count arg forces non-interactive) |
+| `music suggest --from "Playlist"` | Suggestions seeded from playlist (flag forces non-interactive) |
 
 All result-producing commands write to the result cache.
 
@@ -114,25 +124,27 @@ Bare `similar` and `suggest` still fetch results (based on current track / liste
 
 ### Top-Level `add` and `remove`
 
-The existing `music add <query>` command (catalog search + add to library) remains unchanged. The new playlist shortcuts are distinguished by the `to` keyword.
+The existing `music add <query>` command (catalog search + add to library) remains unchanged. The new playlist shortcuts use a `--to` flag to avoid grammar ambiguity.
 
 | Command | Effect |
 |---|---|
 | `music add house music` | Search catalog for "house music", add to library (existing) |
-| `music add 3` | Add result #3 from last results to library (new) |
+| `music add 3` | Add result #3 from last songs cache to library (new) |
 | `music add --id <catalog-id>` | Add by catalog ID (existing) |
-| `music add to "House"` | Add current song to playlist "House" (new) |
-| `music add to "House" and "Working Vibes"` | Add current song to both playlists (new) |
-| `music add 3 to "House"` | Add result #3 to playlist "House" (new) |
+| `music add --to "House"` | Add current song to playlist "House" (new) |
+| `music add --to "House" --to "Working Vibes"` | Add current song to both playlists (new) |
+| `music add 3 --to "House"` | Add result #3 to playlist "House" (new) |
 | `music remove` | Remove current song from current playlist |
 | `music remove "House"` | Remove current song from playlist "House" |
 | `music remove all` | Remove current song from all playlists |
 
 ### `add` Parsing
 
-The word `to` is the delimiter between catalog/library operations and playlist operations:
-- **No `to` present:** behaves like current `add` (catalog search or index lookup). Integer = result index, otherwise = search query.
-- **`to` present:** everything before `to` is what to add (integer = result index, nothing = current song). Everything after `to` is playlist name(s), split by the word `and`.
+The `--to` flag is the delimiter between catalog/library operations and playlist operations:
+- **No `--to` present:** behaves like current `add` (catalog search or index lookup). Integer = result index from last songs cache, otherwise = search query.
+- **`--to` present:** the flag value(s) are playlist names. The positional arg (if any) is what to add: integer = result index, nothing = current song. `--to` can be repeated for multiple playlists.
+
+This avoids reserving natural-language words like "to" and "and" that could appear in playlist names.
 
 ### `remove` Parsing
 
