@@ -24,6 +24,7 @@ struct Music: ParsableCommand {
             // Catalog
             Search.self,
             Add.self,
+            Remove.self,
             Playlist.self,
             // Discovery
             Similar.self,
