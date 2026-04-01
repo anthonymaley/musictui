@@ -1860,7 +1860,7 @@ struct PlaylistCreate: ParsableCommand {
                         try await backend.runMusic("""
                             set results to (every track of playlist "Library" whose name is "\(et)" and artist is "\(ea)")
                             if (count of results) = 0 then
-                                set results to (every track of playlist "Library" whose name contains "\(et)")
+                                set results to (every track of playlist "Library" whose name contains "\(et)" and artist contains "\(ea)")
                             end if
                             if (count of results) > 0 then
                                 duplicate item 1 of results to playlist "\(name)"
@@ -1919,7 +1919,7 @@ struct PlaylistAdd: ParsableCommand {
                         try await backend.runMusic("""
                             set results to (every track of playlist "Library" whose name is "\(et)" and artist is "\(ea)")
                             if (count of results) = 0 then
-                                set results to (every track of playlist "Library" whose name contains "\(et)")
+                                set results to (every track of playlist "Library" whose name contains "\(et)" and artist contains "\(ea)")
                             end if
                             if (count of results) > 0 then
                                 duplicate item 1 of results to playlist "\(playlist)"
