@@ -16,6 +16,7 @@ struct Music: ParsableCommand {
             Now.self,
             Shuffle.self,
             Repeat_.self,
+            Radio.self,
             // Speakers & Volume
             Speaker.self,
             Vol.self,

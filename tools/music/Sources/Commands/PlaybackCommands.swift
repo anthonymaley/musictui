@@ -144,6 +144,10 @@ struct Now: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Show what's currently playing.")
     @Flag(name: .long, help: "Output JSON") var json = false
     func run() throws {
+        if isBareInvocation(command: "now") && isTTY() {
+            runNowPlayingTUI()
+            return
+        }
         showNowPlaying(json: json)
     }
 }
@@ -232,6 +236,19 @@ struct Repeat_: ParsableCommand {
         let backend = AppleScriptBackend()
         _ = try syncRun { try await backend.runMusic("set song repeat to \(mode.lowercased())") }
         print("Repeat \(mode.lowercased()).")
+    }
+}
+
+struct Radio: ParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Start a radio station from the current track.")
+    func run() throws {
+        let backend = AppleScriptBackend()
+        let info = try syncRun {
+            try await backend.runMusic("return name of current track & \" — \" & artist of current track")
+        }
+        let trackInfo = info.trimmingCharacters(in: .whitespacesAndNewlines)
+        startRadioStation()
+        print("Started radio station from: \(trackInfo)")
     }
 }
 
