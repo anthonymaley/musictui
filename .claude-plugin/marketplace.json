@@ -4,7 +4,7 @@
     "name": "Anthony Maley"
   },
   "metadata": {
-    "description": "Apple Music controller for Claude Code: playback, AirPlay, catalog search, library management, playlists, and music discovery on macOS",
+    "description": "Control Apple Music, AirPlay speakers, and AirPods from Claude Code or the terminal. Instant slash commands, a full CLI, and natural language orchestration — all on macOS.",
     "version": "1.2.0"
   },
   "plugins": [
@@ -14,7 +14,7 @@
         "source": "url",
         "url": "git@github.com:anthonymaley/music.git"
       },
-      "description": "Control Apple Music playback, AirPlay speakers, and AirPods on macOS. Search the catalog, add to library, manage playlists, discover new music, route audio to speakers and headphones — all from the terminal.",
+      "description": "Control Apple Music, AirPlay speakers, and AirPods from Claude Code or the terminal. Slash commands for instant playback and speaker control (zero tokens), a CLI for search, playlists, and discovery, and natural language for multi-step orchestration. Works on macOS with zero setup.",
       "version": "1.2.0",
       "strict": true
     }

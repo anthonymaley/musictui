@@ -1,6 +1,6 @@
 {
   "name": "music",
-  "description": "Control Apple Music playback, AirPlay speakers, and AirPods on macOS. Search the catalog, add to library, manage playlists, discover new music, route audio to speakers and headphones — all from the terminal.",
+  "description": "Control Apple Music, AirPlay speakers, and AirPods from Claude Code or the terminal. Slash commands for instant playback and speaker control (zero tokens), a CLI for search, playlists, and discovery, and natural language for multi-step orchestration. Works on macOS with zero setup.",
   "version": "1.2.0",
   "author": {
     "name": "Anthony Maley"

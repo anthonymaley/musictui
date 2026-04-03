@@ -188,9 +188,8 @@ User types:  /music:play Fouk kitchen 60%
 1. Claude Code runs commands/play.md as a shell script
 2. Script checks: is music installed?
    ├─ YES → parses args, extracts speaker + volume + query
-   │        music speaker set Kitchen
-   │        music volume Kitchen 60
-   │        music play --playlist "Fouk" || music play --song "Fouk"
+   │        music speaker kitchen 60
+   │        music play "Fouk"
    └─ NO  → osascript -e 'tell application "Music" to play'
 3. Output printed directly to chat
 ```
@@ -204,11 +203,9 @@ User says:  "find me something like what's playing and make a playlist"
 2. Skill provides full music CLI reference to Claude
 3. Claude composes commands:
    music similar --json
-   music playlist create "Discovered"
-   music playlist add "Discovered" "Track 1" "Artist 1"
-   music playlist add "Discovered" "Track 2" "Artist 2"
-   ...
-4. Claude executes each via Bash tool
+   music playlist create-from "Track 1" "Artist 1" "Track 2" "Artist 2" --name "Discovered"
+   music play "Discovered" shuffle
+4. Claude executes via Bash tool (chained with &&)
 5. Claude summarizes results in natural language
 ```
 
@@ -229,7 +226,7 @@ Every few seconds, Claude Code runs statusline.sh:
 ```
 apple-music/
 ├── .claude-plugin/
-│   ├── plugin.json              # Plugin metadata (name: "music", v1.0.0)
+│   ├── plugin.json              # Plugin metadata (name: "music", v1.2.0)
 │   └── marketplace.json         # Marketplace listing
 ├── commands/                    # 13 slash commands
 │   ├── play.md                  # /music:play [query] [speaker] [vol%]
