@@ -32,11 +32,19 @@ struct PlaylistBrowse: ParsableCommand {
 
         let backend = AppleScriptBackend()
         let result = try syncRun {
-            try await backend.runMusic("get name of every user playlist")
+            try await backend.runMusic("""
+                set output to ""
+                repeat with p in (every user playlist)
+                    if output is not "" then set output to output & linefeed
+                    set output to output & name of p
+                end repeat
+                return output
+            """)
         }
         let names = result.trimmingCharacters(in: .whitespacesAndNewlines)
-            .split(separator: ",")
+            .components(separatedBy: "\n")
             .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
 
         guard !names.isEmpty else {
             print("No playlists found.")
@@ -56,7 +64,7 @@ struct PlaylistBrowse: ParsableCommand {
                     set i to 1
                     set total to count of trackList
                     repeat with t in trackList
-                        if i > 50 then exit repeat
+                        if i > 200 then exit repeat
                         if output is not "" then set output to output & linefeed
                         set output to output & name of t & " — " & artist of t
                         set i to i + 1

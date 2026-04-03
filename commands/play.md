@@ -31,16 +31,20 @@ if echo "$ARGS" | grep -qoE '[0-9]+%'; then
     ARGS=$(echo "$ARGS" | sed -E "s/ *[0-9]+%//")
 fi
 
-# --- Match a speaker name from live AirPlay device list ---
+# --- Match a speaker name from live AirPlay device list (longest match wins) ---
 SPEAKER=""
+SPEAKER_LEN=0
 ARGS_LOWER=$(echo "$ARGS" | tr '[:upper:]' '[:lower:]')
 while IFS= read -r dev; do
     dev=$(echo "$dev" | sed 's/^ *//;s/ *$//')
     [ -z "$dev" ] && continue
     dev_lower=$(echo "$dev" | tr '[:upper:]' '[:lower:]')
     if echo " $ARGS_LOWER " | grep -qi " $dev_lower "; then
-        SPEAKER="$dev"
-        break
+        dev_len=${#dev_lower}
+        if [ "$dev_len" -gt "$SPEAKER_LEN" ]; then
+            SPEAKER="$dev"
+            SPEAKER_LEN=$dev_len
+        fi
     fi
 done < <($MUSIC_CLI speaker list --json 2>/dev/null | grep -o '"name":"[^"]*"' | cut -d'"' -f4)
 
