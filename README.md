@@ -47,8 +47,9 @@ Control Apple Music, AirPlay speakers, and AirPods from Claude Code or the termi
 | Layer | How | Setup | Token cost |
 |-------|-----|-------|-----------|
 | **Slash commands** (`/music:play`) | Type and run, instant | None | None |
-| **CLI** (`music playlist create ...`) | Terminal commands, scriptable | Apple Developer account | None |
-| **Natural language** ("play house on the kitchen") | Claude orchestrates multiple CLI calls | None | Normal |
+| **CLI** (`music now`, `music speaker`) | Terminal commands, TUI, scriptable | Build from source | None |
+| **CLI + API** (`music search`, `music playlist create`) | Catalog, library, discovery | + Apple Developer account | None |
+| **Natural language** ("play house on the kitchen") | Claude orchestrates CLI calls | Depends on features used | Normal |
 
 ## Install
 
@@ -143,7 +144,6 @@ Instant execution. No AI reasoning, no token cost. Type `/music:` and tab to dis
 
 | Command | What it does |
 |---------|-------------|
-| `/music:playlist` | Interactive 2-pane browser with track preview |
 | `/music:playlist list` | List all playlists |
 | `/music:playlist tracks Working Vibes` | Show tracks in a playlist |
 
@@ -267,13 +267,13 @@ See what's playing at the bottom of Claude Code. Always visible, no token cost.
 └──────────────────────────────────────────────────────────────┘
 ```
 
-Add to `~/.claude/settings.json`:
+Add to `~/.claude/settings.json` (adjust the path to your plugin cache location):
 
 ```json
 {
   "statusLine": {
     "type": "command",
-    "command": "~/.claude/plugins/music/scripts/statusline.sh"
+    "command": "~/.claude/plugins/cache/music@anthonymaley-music/scripts/statusline.sh"
   }
 }
 ```
