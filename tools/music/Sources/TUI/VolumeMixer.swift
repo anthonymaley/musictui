@@ -15,64 +15,74 @@ func runVolumeMixer(
     defer { terminal.exitRawMode() }
 
     var cursor = 0
+    var digitBuffer = ""
+
+    // Shared shell coordinates
+    let appX = 3
+    let appY = 2
+    let titleY = 4
+    let ruleY = 5
+    let bodyY = 7
+
     let barWidth = 20
 
-    // Terminal size
-    func termSize() -> (rows: Int, cols: Int) {
+    func termSize() -> (height: Int, width: Int) {
         var ws = winsize()
         _ = ioctl(STDOUT_FILENO, UInt(TIOCGWINSZ), &ws)
-        return (Int(ws.ws_row), Int(ws.ws_col))
+        let w = Int(ws.ws_col) > 0 ? Int(ws.ws_col) : 120
+        let h = Int(ws.ws_row) > 0 ? Int(ws.ws_row) : 30
+        return (h, w)
     }
-
-    let contentX = 3
-    let titleY = 3
-    let ruleY = 4
-    let bodyY = 6
 
     func render() {
         let (termHeight, _) = termSize()
-        let footerY = termHeight
+        let footerY = termHeight - 1
+        let statusY = footerY - 1
+
+        let maxNameLen = speakers.map(\.name.count).max() ?? 0
+        let padLen = maxNameLen + 2
 
         var out = ANSICode.cursorHome + ANSICode.clearScreen
 
         // App label
-        out += ANSICode.moveTo(row: 2, col: contentX)
+        out += ANSICode.moveTo(row: appY, col: appX)
         out += "\(ANSICode.dim)music\(ANSICode.reset)"
 
         // Title
-        out += ANSICode.moveTo(row: titleY, col: contentX)
+        out += ANSICode.moveTo(row: titleY, col: appX)
         out += "\(ANSICode.bold)\(ANSICode.cyan)♫ Volume Mixer\(ANSICode.reset)"
 
         // Accent rule
-        out += ANSICode.moveTo(row: ruleY, col: contentX)
+        out += ANSICode.moveTo(row: ruleY, col: appX)
         out += "\(ANSICode.dim)\(String(repeating: "─", count: 18))\(ANSICode.reset)"
 
         // Speaker rows
-        let maxNameLen = speakers.map(\.name.count).max() ?? 0
-        let padLen = maxNameLen + 2
-
         for (i, spk) in speakers.enumerated() {
             let row = bodyY + i
-            out += ANSICode.moveTo(row: row, col: contentX)
+            out += ANSICode.moveTo(row: row, col: appX)
 
             let pointer = i == cursor ? "\(ANSICode.cyan)▶\(ANSICode.reset)" : " "
             let padded = spk.name.padding(toLength: padLen, withPad: " ", startingAt: 0)
+
             let filled = Int(Double(spk.volume) / 100.0 * Double(barWidth))
             let empty = barWidth - filled
             let bar = "\(ANSICode.green)\(String(repeating: "█", count: filled))\(ANSICode.reset)\(ANSICode.dim)\(String(repeating: "░", count: empty))\(ANSICode.reset)"
             let pct = String(format: "%3d%%", spk.volume)
 
-            out += "\(pointer) \(padded) \(bar)  \(pct)"
+            if i == cursor {
+                out += "\(pointer) \(ANSICode.bold)\(padded)\(ANSICode.reset) \(bar)  \(pct)"
+            } else {
+                out += "\(pointer) \(padded) \(bar)  \(pct)"
+            }
         }
 
-        // Status row above footer
-        let activeCount = speakers.count
-        let statusY = footerY - 2
-        out += ANSICode.moveTo(row: statusY, col: contentX)
+        // Status row
+        let activeCount = speakers.filter { $0.volume > 0 }.count
+        out += ANSICode.moveTo(row: statusY, col: appX)
         out += "\(ANSICode.dim)\(activeCount) active output\(activeCount == 1 ? "" : "s")\(ANSICode.reset)"
 
-        // Footer — docked at bottom, no box
-        out += ANSICode.moveTo(row: footerY, col: contentX)
+        // Footer
+        out += ANSICode.moveTo(row: footerY, col: appX)
         out += "\(ANSICode.dim)↑↓ Speaker   ←→ Adjust 5%   0-9 Quick Set   q Quit\(ANSICode.reset)"
 
         print(out, terminator: "")
@@ -80,8 +90,6 @@ func runVolumeMixer(
     }
 
     render()
-
-    var digitBuffer = ""
 
     while true {
         guard let key = KeyPress.read() else { continue }
