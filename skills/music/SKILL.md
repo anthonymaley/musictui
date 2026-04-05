@@ -20,8 +20,12 @@ music play                                    # resume (shows now playing + spea
 music play "Working Vibes"                    # play a playlist by name
 music play "Working Vibes" shuffle            # play with shuffle
 music play 3                                  # play result #3 from last search
+music play "Working Vibes" kitchen 20         # play on Kitchen speaker at vol 20
+music play "Working Vibes" kitchen 20 shuffle # routed + shuffled
 music play --playlist "Working Vibes"         # explicit playlist flag
 music play --song "Get It Done" --artist "Fouk"  # search library + play
+music play --verbose                          # diagnostic output on stderr
+music play --no-wake                          # skip speaker wake cycle
 music pause
 music skip                                    # next track
 music back                                    # previous track
@@ -43,6 +47,8 @@ music speaker kitchen 40                      # add kitchen at volume 40
 music speaker kitchen stop                    # remove kitchen from group
 music speaker airpods only                    # deselect all, select airpods only
 music speaker 1 2 5                           # add speakers by index from last list
+music speaker wake                            # wake all active speakers (fix ghost connections)
+music speaker wake kitchen                    # wake a specific speaker
 music speaker set "Kitchen"                   # hidden alias (skill compat)
 music speaker add "Bedroom"                   # hidden alias
 music speaker remove "Bedroom"                # hidden alias
@@ -116,6 +122,15 @@ music new-releases --like-current             # new releases from current artist
 music new-releases --artist "Fouk"            # new releases from specific artist
 music mix --artists "Fouk,Floating Points" --count 20 --name "Friday Mix"  # mixed playlist
 ```
+
+## Interactive TUI (requires real terminal, not Claude Code)
+
+```bash
+music now                                     # now playing TUI with timeline
+music playlist                                # 2-pane playlist browser
+```
+
+TUI controls: `↑↓` navigate timeline (instant), `Enter` play selected, `←→` seek, `Space` pause, `z` cycle shuffle/repeat, `r` radio, `l` love, `d` dislike, `+/-` volume, `s` speakers, `v` mixer, `q` quit.
 
 ## Result Cache
 
