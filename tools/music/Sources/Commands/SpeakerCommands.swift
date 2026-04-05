@@ -124,8 +124,31 @@ func runSpeakerSmart(args: [String], json: Bool) throws {
             print("Added \(speaker.name).")
         }
 
-    case .wake:
-        break
+    case .wake(let name):
+        let targetNames: [String]
+        if let name = name {
+            let resolved = try resolveSpeakerName(name, backend: backend)
+            targetNames = [resolved]
+        } else {
+            let devices = try fetchSpeakerDevices()
+            targetNames = devices.filter { $0["selected"] as? Bool == true }.map { $0["name"] as! String }
+            if targetNames.isEmpty {
+                print("No active speakers to wake.")
+                return
+            }
+        }
+
+        let results = withStatus("Waking speakers...") {
+            wakeSpeakers(targetNames, backend: backend)
+        }
+
+        for r in results {
+            if r.verifiedSelected {
+                print("Woke \(r.name).")
+            } else {
+                print("\(r.name): wake cycle completed but verification uncertain.")
+            }
+        }
     }
 }
 
