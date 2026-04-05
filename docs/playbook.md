@@ -93,6 +93,9 @@ Published via Claude Code marketplace. Version bumps must update all three locat
 - User must grant Automation permissions on first use
 - macOS only — AppleScript doesn't exist on other platforms
 - AirPods names often contain apostrophes — escape in bash: `'Anthony'\''s AirPods Pro'`
+- **Ghost speaker problem** — AirPlay speakers report `selected = true` but don't play audio. Fix: deselect→wait→reselect (wake cycle). v1.4.0 does this automatically on routed playback.
+- **ArgumentParser flag shadowing** — `@Flag var verbose` on a ParsableCommand shadows the global `verbose()` function. Use `@Flag var verboseFlag` with explicit `name: [.customShort("v"), .customLong("verbose")]`.
+- **Error enum payload formatting** — Don't embed full sentences in error enum payloads when `errorDescription` also wraps them. Use structured fields (e.g., `speakerNotFound(name:, available:)`).
 
 ## Current Status
-v1.3.0 — Full music CLI with 20 subcommands across playback, speakers, auth, catalog, playlists, discovery, and radio. Interactive TUI screens: now playing (with album art via chafa), 2-pane playlist browser with NowPlaying handoff, speaker picker, volume mixer. All slash commands (14) delegate to music CLI with AppleScript fallback.
+v1.4.0 — AirPlay wake cycle for reliable speaker routing, `--verbose` diagnostics, speaker error messages with available device list, play/pause and shuffle/repeat TUI indicators, progress feedback on library sync and playlist operations. Direct CLI routed playback: `music play "Playlist" kitchen 20`.
