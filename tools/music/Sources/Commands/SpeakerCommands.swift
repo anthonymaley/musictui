@@ -11,12 +11,17 @@ enum SpeakerAction: Equatable {
     case remove(name: String)
     case exclusive(name: String)
     case indices([Int])
+    case wake(name: String?)
 }
 
 struct SpeakerParser {
     static func parse(_ args: [String]) -> SpeakerAction {
         guard !args.isEmpty else { return .interactive }
         if args.count == 1 && args[0].lowercased() == "list" { return .list }
+        if args.count >= 1 && args[0].lowercased() == "wake" {
+            let name = args.count > 1 ? args.dropFirst().joined(separator: " ") : nil
+            return .wake(name: name)
+        }
         let ints = args.compactMap { Int($0) }
         if ints.count == args.count { return .indices(ints) }
         let lastArg = args.last!.lowercased()
@@ -118,6 +123,9 @@ func runSpeakerSmart(args: [String], json: Bool) throws {
             }
             print("Added \(speaker.name).")
         }
+
+    case .wake:
+        break
     }
 }
 

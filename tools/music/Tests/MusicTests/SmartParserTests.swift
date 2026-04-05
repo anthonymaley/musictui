@@ -46,4 +46,19 @@ final class SpeakerParserTests: XCTestCase {
         let result = SpeakerParser.parse(["list"])
         XCTAssertEqual(result, .list)
     }
+
+    func testWakeAllSpeakers() {
+        let result = SpeakerParser.parse(["wake"])
+        XCTAssertEqual(result, .wake(name: nil))
+    }
+
+    func testWakeSpecificSpeaker() {
+        let result = SpeakerParser.parse(["wake", "kitchen"])
+        XCTAssertEqual(result, .wake(name: "kitchen"))
+    }
+
+    func testWakeMultiWordSpeaker() {
+        let result = SpeakerParser.parse(["wake", "macbook", "pro"])
+        XCTAssertEqual(result, .wake(name: "macbook pro"))
+    }
 }
