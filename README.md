@@ -114,6 +114,7 @@ Instant execution. No AI reasoning, no token cost. Type `/music:` and tab to dis
 |---------|-------------|
 | `/music:play` | Resume playback |
 | `/music:play Working Vibes` | Play a playlist |
+| `/music:play Working Vibes kitchen 60` | Play on a speaker at volume |
 | `/music:play Working Vibes shuffle` | Shuffle a playlist |
 | `/music:play 3` | Play result #3 from last search/playlist |
 | `/music:pause` | Pause |
@@ -134,6 +135,8 @@ Instant execution. No AI reasoning, no token cost. Type `/music:` and tab to dis
 | `/music:speaker kitchen 40` | Add kitchen at volume 40 |
 | `/music:speaker kitchen stop` | Remove kitchen from group |
 | `/music:speaker airpods only` | Switch to AirPods only |
+| `/music:speaker wake` | Wake all active speakers (fix ghost connections) |
+| `/music:speaker wake kitchen` | Wake a specific speaker |
 | `/music:speaker 1 2 5` | Add speakers by number from last list |
 | `/music:volume` | Interactive per-speaker volume mixer |
 | `/music:volume 60` | Set all active speakers to 60 |
@@ -198,6 +201,40 @@ Instant execution. No AI reasoning, no token cost. Type `/music:` and tab to dis
 | `music new-releases --like-current` | New releases from current artist |
 | `music mix --artists "Fouk,Floating Points" --name "Friday Mix"` | Mixed playlist |
 
+### Routed Playback
+
+Play music on a specific speaker in one command. The CLI parses the speaker name from your args using longest-match against live AirPlay devices.
+
+```bash
+music play "Working Vibes" kitchen 20          # play on Kitchen at volume 20
+music play "Working Vibes" kitchen 20 shuffle  # with shuffle
+music play "Working Vibes" "sonos arc" 60      # multi-word speaker names
+```
+
+A wake cycle runs automatically when a speaker is detected — deselects then reselects the speaker to fix the common AirPlay "ghost connection" problem where a speaker shows as connected but isn't playing audio. Use `--no-wake` to skip it, or `--verbose` to see each step:
+
+```bash
+music play "Working Vibes" kitchen 20 --verbose  # see wake cycle steps
+music play "Working Vibes" kitchen 20 --no-wake  # skip wake cycle
+```
+
+For mid-session speaker recovery:
+
+```bash
+music speaker wake              # wake all active speakers
+music speaker wake kitchen      # wake a specific speaker
+```
+
+### Diagnostics
+
+Add `--verbose` (`-v`) to any command for diagnostic output on stderr:
+
+```bash
+music speaker smart --verbose wake kitchen   # see deselect/reselect/verify steps
+music play --playlist "Working Vibes" -v     # see AppleScript calls
+music speaker smart --verbose list --json    # verbose on stderr, JSON on stdout
+```
+
 ### JSON Output
 
 Every command supports `--json` for scripting and automation:
@@ -242,7 +279,7 @@ Claude handles multi-step orchestration — searching the catalog, creating play
 
 Run these commands in a real terminal (not inside Claude Code — TUI requires a TTY). Install `chafa` (`brew install chafa`) for album art in now-playing.
 
-**Now playing** (`music now`) — album art, progress bar, queue, playback controls. Press `s` for speakers, `v` for volume mixer, `r` for radio — all return to this screen.
+**Now playing** (`music now`) — album art, progress bar, queue, playback controls. Shows `▶`/`⏸` play state and `Shuffle`/`Repeat` indicators. Press `s` for speakers, `v` for volume mixer, `r` for radio — all return to this screen.
 
 ![Now Playing](media/nowplaying.png)
 
