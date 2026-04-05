@@ -570,15 +570,23 @@ func runNowPlayingWithContext(_ context: PlaybackContext?) -> NowPlayingResult {
                     }
                     _ = runMultiSelectList(title: "AirPlay Speakers", items: &items, onToggle: { idx, selected in
                         let name = devices[idx]["name"] as! String
-                        _ = try? syncRun {
-                            try await backend.runMusic("set selected of AirPlay device \"\(name)\" to \(selected)")
+                        do {
+                            _ = try syncRun {
+                                try await backend.runMusic("set selected of AirPlay device \"\(name)\" to \(selected)")
+                            }
+                        } catch {
+                            verbose("speaker operation failed: \(error.localizedDescription)")
                         }
                     }, onAdjust: { idx, delta in
                         volumes[idx] = min(100, max(0, volumes[idx] + delta))
                         let name = devices[idx]["name"] as! String
                         let vol = volumes[idx]
-                        _ = try? syncRun {
-                            try await backend.runMusic("set sound volume of AirPlay device \"\(name)\" to \(vol)")
+                        do {
+                            _ = try syncRun {
+                                try await backend.runMusic("set sound volume of AirPlay device \"\(name)\" to \(vol)")
+                            }
+                        } catch {
+                            verbose("speaker operation failed: \(error.localizedDescription)")
                         }
                         return "vol: \(vol)"
                     })
@@ -594,8 +602,12 @@ func runNowPlayingWithContext(_ context: PlaybackContext?) -> NowPlayingResult {
                     }
                     if !speakers.isEmpty {
                         runVolumeMixer(speakers: &speakers) { name, volume in
-                            _ = try? syncRun {
-                                try await backend.runMusic("set sound volume of AirPlay device \"\(name)\" to \(volume)")
+                            do {
+                                _ = try syncRun {
+                                    try await backend.runMusic("set sound volume of AirPlay device \"\(name)\" to \(volume)")
+                                }
+                            } catch {
+                                verbose("speaker operation failed: \(error.localizedDescription)")
                             }
                         }
                     }
@@ -837,15 +849,23 @@ func runNowPlayingTUI() {
                     }
                     _ = runMultiSelectList(title: "AirPlay Speakers", items: &items, onToggle: { idx, selected in
                         let name = devices[idx]["name"] as! String
-                        _ = try? syncRun {
-                            try await backend.runMusic("set selected of AirPlay device \"\(name)\" to \(selected)")
+                        do {
+                            _ = try syncRun {
+                                try await backend.runMusic("set selected of AirPlay device \"\(name)\" to \(selected)")
+                            }
+                        } catch {
+                            verbose("speaker operation failed: \(error.localizedDescription)")
                         }
                     }, onAdjust: { idx, delta in
                         volumes[idx] = min(100, max(0, volumes[idx] + delta))
                         let name = devices[idx]["name"] as! String
                         let vol = volumes[idx]
-                        _ = try? syncRun {
-                            try await backend.runMusic("set sound volume of AirPlay device \"\(name)\" to \(vol)")
+                        do {
+                            _ = try syncRun {
+                                try await backend.runMusic("set sound volume of AirPlay device \"\(name)\" to \(vol)")
+                            }
+                        } catch {
+                            verbose("speaker operation failed: \(error.localizedDescription)")
                         }
                         return "vol: \(vol)"
                     })
@@ -860,8 +880,12 @@ func runNowPlayingTUI() {
                     }
                     if !speakers.isEmpty {
                         runVolumeMixer(speakers: &speakers) { name, volume in
-                            _ = try? syncRun {
-                                try await backend.runMusic("set sound volume of AirPlay device \"\(name)\" to \(volume)")
+                            do {
+                                _ = try syncRun {
+                                    try await backend.runMusic("set sound volume of AirPlay device \"\(name)\" to \(volume)")
+                                }
+                            } catch {
+                                verbose("speaker operation failed: \(error.localizedDescription)")
                             }
                         }
                     }
