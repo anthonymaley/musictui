@@ -330,8 +330,12 @@ struct PlaylistCreate: ParsableCommand {
 
         if !ids.isEmpty {
             try syncRun { try await api.addToLibrary(songIDs: ids) }
-            try syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
+            withStatus("Syncing library...") {
+                try! syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
+            }
 
+            let total = indices.count
+            var count = 0
             for idx in indices {
                 if let song = try? cache.lookupSong(index: idx) {
                     let et = song.title.replacingOccurrences(of: "\"", with: "\\\"")
@@ -348,9 +352,12 @@ struct PlaylistCreate: ParsableCommand {
                         """)
                     }
                     addedCount += 1
+                    count += 1
+                    updateStatus("Adding tracks... \(count)/\(total)")
                     print("  + \(song.title) — \(song.artist)")
                 }
             }
+            clearStatus()
         }
 
         print("Created '\(name)' with \(addedCount) tracks.")
@@ -394,8 +401,12 @@ struct PlaylistAdd: ParsableCommand {
 
             if !ids.isEmpty {
                 try syncRun { try await api.addToLibrary(songIDs: ids) }
-                try syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
+                withStatus("Syncing library...") {
+                    try! syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
+                }
 
+                let total = songs.count
+                var count = 0
                 for song in songs {
                     let et = song.title.replacingOccurrences(of: "\"", with: "\\\"")
                     let ea = song.artist.replacingOccurrences(of: "\"", with: "\\\"")
@@ -410,8 +421,11 @@ struct PlaylistAdd: ParsableCommand {
                             end if
                         """)
                     }
+                    count += 1
+                    updateStatus("Adding tracks... \(count)/\(total)")
                     print("  + \(song.title) — \(song.artist)")
                 }
+                clearStatus()
                 print("Added \(songs.count) track(s) to '\(playlist)'.")
             }
             return
@@ -431,7 +445,9 @@ struct PlaylistAdd: ParsableCommand {
         print("Found: \(song.title) — \(song.artist)")
 
         try syncRun { try await api.addToLibrary(songIDs: [song.id]) }
-        try syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
+        withStatus("Syncing library...") {
+            try! syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
+        }
 
         let escapedTitle = song.title.replacingOccurrences(of: "\"", with: "\\\"")
         let escapedArtist = song.artist.replacingOccurrences(of: "\"", with: "\\\"")
@@ -615,8 +631,12 @@ struct PlaylistCreateFrom: ParsableCommand {
         }
 
         // Wait for library sync then add to playlist
-        try syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
+        withStatus("Syncing library...") {
+            try! syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
+        }
 
+        let total = added.count
+        var count = 0
         for track in added {
             let escapedTitle = track.title.replacingOccurrences(of: "\"", with: "\\\"")
             let escapedArtist = track.artist.replacingOccurrences(of: "\"", with: "\\\"")
@@ -631,7 +651,10 @@ struct PlaylistCreateFrom: ParsableCommand {
                     end if
                 """)
             }
+            count += 1
+            updateStatus("Adding tracks... \(count)/\(total)")
         }
+        clearStatus()
 
         print("Created '\(name)' with \(added.count) tracks.")
         if !failed.isEmpty {
