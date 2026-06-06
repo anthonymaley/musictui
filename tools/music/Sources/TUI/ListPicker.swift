@@ -158,11 +158,37 @@ func runPlaylistBrowser(
         fflush(stdout)
     }
 
+    let enrichBatch = 5
+
+    func enrichTick() {
+        let frame = ScreenFrame.current()
+        let listY = frame.bodyY + 2
+        let maxVisible = max(1, frame.statusY - listY - 1)
+        let visible = plScroll..<min(meta.count, plScroll + maxVisible)
+        let batch = nextEnrichmentBatch(total: meta.count, loaded: loaded,
+                                        visible: visible, batchSize: enrichBatch)
+        guard !batch.isEmpty else { return }
+        let fetched = onMeta(batch)
+        for idx in batch {
+            if let (count, dur, smart, kind) = fetched[idx] {
+                meta[idx].trackCount = count
+                meta[idx].durationSec = dur
+                meta[idx].isSmart = smart
+                meta[idx].specialKind = kind
+            }
+            meta[idx].loaded = true   // mark loaded even on fetch miss to avoid re-fetch loops
+            loaded.insert(idx)
+        }
+    }
+
     render()
 
     while true {
-        let key = KeyPress.read(timeout: 60.0)
-        guard let key = key else { continue }
+        let pending = loaded.count < meta.count
+        guard let key = KeyPress.read(timeout: pending ? 0.15 : 60.0) else {
+            if pending { enrichTick(); render() }
+            continue
+        }
 
         let trackCount = fullCache[plCursor]?.tracks.count ?? 0
 
