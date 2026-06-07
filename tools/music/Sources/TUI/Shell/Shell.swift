@@ -94,7 +94,7 @@ func runShell() {
             case .next:       _ = try? syncRun { try await backend.runMusic("next track") }
             case .prev:       _ = try? syncRun { try await backend.runMusic("previous track") }
             case .shuffle:    _ = try? syncRun { try await backend.runMusic("set shuffle enabled to (not shuffle enabled)") }
-            case .radio:      _ = startRadioStation(); router.switchTo(.nowPlaying)
+            case .radio:      createStationFromCurrentTrack(backend: backend); router.switchTo(.nowPlaying)
             case .switchScene(let n):
                 if n >= 1 && n <= tabs.count, ensureScene(tabs[n - 1].id) != nil { router.switchTo(tabs[n - 1].id) }
             case .quit:       return

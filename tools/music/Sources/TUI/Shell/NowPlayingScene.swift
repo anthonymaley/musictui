@@ -25,6 +25,7 @@ final class NowPlayingScene: Scene {
     private var menuShownLastFrame = false
     private var pendingSeedTitle = ""
     private var pendingSeedArtist = ""
+    private var pendingFromStopped = false   // menu opened from an auto queue-end (playback stopped)
     private var wantsPlaylists = false
 
     init(backend: AppleScriptBackend) { self.backend = backend }
@@ -40,6 +41,7 @@ final class NowPlayingScene: Scene {
 
     func tick(snapshot: NowPlayingSnapshot) {
         menuShownLastFrame = menuActive(snapshot)
+        pendingFromStopped = snapshot.queueEnded
         if snapshot.queueEnded {
             pendingSeedTitle = snapshot.endedTrack
             pendingSeedArtist = snapshot.endedArtist
@@ -177,7 +179,14 @@ final class NowPlayingScene: Scene {
     private func act(on action: ContinuationAction) {
         switch action {
         case .radio:
-            _ = startRadioStation(seedTitle: pendingSeedTitle, seedArtist: pendingSeedArtist)
+            // At an auto queue-end the player has stopped, so there's no current
+            // track for "Create Station" to act on — replay the ended track first
+            // to make it current, then invoke Apple Music's native station.
+            if pendingFromStopped {
+                playLibraryTrack(backend: backend, title: pendingSeedTitle, artist: pendingSeedArtist)
+                Thread.sleep(forTimeInterval: 1.0)
+            }
+            createStationFromCurrentTrack(backend: backend)
         case .playlist:
             wantsPlaylists = true
         case .quiet:

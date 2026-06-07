@@ -343,6 +343,25 @@ func formatTime(_ seconds: Int) -> String {
     return String(format: "%d:%02d", m, s)
 }
 
+/// Invoke Apple Music's NATIVE radio by clicking Song ▸ Create Station via
+/// System Events. This is the real Apple Music station engine (a diverse,
+/// endless mix), acting on the currently-playing track — not a home-built
+/// search. Requires Accessibility/Automation permission for the process driving
+/// Music (the same permission `music` already uses). Best-effort: if there is no
+/// current track or the menu item is disabled (e.g. a non-catalog track), the
+/// click is a no-op.
+func createStationFromCurrentTrack(backend: AppleScriptBackend = AppleScriptBackend()) {
+    _ = try? syncRun {
+        try await backend.runMusic("""
+            tell application "System Events"
+                tell process "Music"
+                    click menu item "Create Station" of menu "Song" of menu bar 1
+                end tell
+            end tell
+        """)
+    }
+}
+
 /// Radio from the currently-playing track's artist (unchanged public behavior).
 func startRadioStation() -> PlaybackContext? {
     let backend = AppleScriptBackend()
