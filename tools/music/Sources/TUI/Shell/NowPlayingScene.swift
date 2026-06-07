@@ -1,6 +1,17 @@
 // tools/music/Sources/TUI/Shell/NowPlayingScene.swift
 import Foundation
 
+enum ContinuationAction: Equatable { case radio, playlist, quiet }
+
+func continuationAction(for key: KeyPress) -> ContinuationAction? {
+    switch key {
+    case .char("r"), .char("R"): return .radio
+    case .char("p"), .char("P"): return .playlist
+    case .char("q"), .char("Q"): return .quiet
+    default: return nil
+    }
+}
+
 final class NowPlayingScene: Scene {
     let id: SceneID = .nowPlaying
     let tabTitle = "Now"
@@ -10,10 +21,28 @@ final class NowPlayingScene: Scene {
     private var scroll = 0
     private var rows: [TrackListEntry] = []
     private var lastCurrentKey = ""
+    private var manualMenu = false   // user-opened menu (vs poller-detected queueEnded)
+    private var menuShownLastFrame = false
+    private var pendingSeedTitle = ""
+    private var pendingSeedArtist = ""
+    private var wantsPlaylists = false
 
     init(backend: AppleScriptBackend) { self.backend = backend }
 
+    private func menuActive(_ snapshot: NowPlayingSnapshot) -> Bool {
+        snapshot.queueEnded || manualMenu
+    }
+    var capturesAllInput: Bool { menuShownLastFrame }
+
     func tick(snapshot: NowPlayingSnapshot) {
+        menuShownLastFrame = menuActive(snapshot)
+        if snapshot.queueEnded {
+            pendingSeedTitle = snapshot.endedTrack
+            pendingSeedArtist = snapshot.endedArtist
+        } else if case .active(let np) = snapshot.outcome {
+            pendingSeedTitle = np.track
+            pendingSeedArtist = np.artist
+        }
         rows = snapshot.surrounding
         // Snap the cursor to the current track when the track changes; leave it
         // alone otherwise so the user can browse Up Next.
@@ -33,6 +62,10 @@ final class NowPlayingScene: Scene {
             out += ANSICode.moveTo(row: r, col: 1) + ANSICode.clearLine
         }
         guard frame.bodyHeight > 4, frame.width > 30 else { return out }
+
+        if menuActive(snapshot) {
+            return renderContinuationMenu(frame: frame, snapshot: snapshot, into: out)
+        }
 
         guard case .active(let np) = snapshot.outcome else {
             out += ANSICode.moveTo(row: frame.bodyY + 1, col: 3) + "\(ANSICode.dim)Nothing playing.\(ANSICode.reset)"
@@ -106,7 +139,64 @@ final class NowPlayingScene: Scene {
         return out
     }
 
+    private func renderContinuationMenu(frame: ShellFrame, snapshot: NowPlayingSnapshot, into base: String) -> String {
+        var out = base
+        let (seedTitle, art): (String, [String]) = snapshot.queueEnded
+            ? (snapshot.endedTrack, snapshot.endedArtLines)
+            : ({ if case .active(let np) = snapshot.outcome { return np.track } else { return "" } }(), snapshot.artLines)
+        let title = snapshot.queueEnded
+            ? "Queue ended — what next?"
+            : "What next?"
+        out += ANSICode.moveTo(row: frame.bodyY, col: 3)
+        out += "\(ANSICode.bold)\(ANSICode.cyan)\(title)\(ANSICode.reset)"
+
+        // Art thumbnail (shared by Radio/Similar cards), then a labelled option list.
+        let artTop = frame.bodyY + 2
+        let artRows = min(art.count, max(0, frame.bodyHeight - 8))
+        for i in 0..<artRows {
+            out += ANSICode.moveTo(row: artTop + i, col: 3) + "\(art[i])\(ANSICode.reset)"
+        }
+        let lx = 3
+        var ly = artTop + artRows + 1
+        let opts: [(String, String)] = [
+            ("[R]", "Artist Radio  \(ANSICode.dim)from \(truncText(seedTitle, to: 28))\(ANSICode.reset)"),
+            ("[P]", "Playlist  \(ANSICode.dim)browse\(ANSICode.reset)"),
+            ("[Q]", "Quiet  \(ANSICode.dim)stop here\(ANSICode.reset)"),
+        ]
+        for (key, label) in opts {
+            out += ANSICode.moveTo(row: ly, col: lx) + "\(ANSICode.lime)\(key)\(ANSICode.reset)  \(label)"
+            ly += 1
+        }
+        return out
+    }
+
+    private func act(on action: ContinuationAction) {
+        switch action {
+        case .radio:
+            _ = startRadioStation(seedTitle: pendingSeedTitle, seedArtist: pendingSeedArtist)
+        case .playlist:
+            wantsPlaylists = true
+        case .quiet:
+            _ = try? syncRun { try await self.backend.runMusic("pause") }
+        }
+    }
+
     func handle(_ key: KeyPress) -> SceneAction {
+        // Continuation menu intercepts its keys when active.
+        if menuShownLastFrame {
+            if let action = continuationAction(for: key) {
+                act(on: action)
+                manualMenu = false           // menu dismissed; queueEnded clears when poller re-enters a real context
+                if wantsPlaylists { wantsPlaylists = false; return .push(.playlists) }
+                return .redraw
+            }
+            // any other key dismisses the manual menu (auto menu stays until poller clears it)
+            if case .escape = key { manualMenu = false; return .redraw }
+        }
+        // Manual open: 'n' (next-options) when no menu is up.
+        if case .char("n") = key, !menuShownLastFrame {
+            manualMenu = true; return .redraw
+        }
         switch key {
         case .up:
             guard !rows.isEmpty else { return .none }

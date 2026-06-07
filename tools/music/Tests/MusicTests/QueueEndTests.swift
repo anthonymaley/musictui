@@ -35,4 +35,11 @@ final class QueueEndTests: XCTestCase {
             prevWasRealPlaylist: true, prevAtLastTrack: true,
             prevNaturalEnd: true, nowIsLibraryAutoplay: false))
     }
+    func testContinuationActionMapping() {
+        XCTAssertEqual(continuationAction(for: .char("r")), .radio)
+        XCTAssertEqual(continuationAction(for: .char("p")), .playlist)
+        XCTAssertEqual(continuationAction(for: .char("q")), .quiet)
+        XCTAssertNil(continuationAction(for: .char("s")))
+        XCTAssertNil(continuationAction(for: .up))
+    }
 }
