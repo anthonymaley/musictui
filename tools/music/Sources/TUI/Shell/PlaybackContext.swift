@@ -74,6 +74,15 @@ func currentTrackArtLines(width: Int, height: Int) -> [String] {
     return artworkToAscii(path: path, width: width, height: height)
 }
 
+/// Strip internal temp-playlist prefixes so the UI shows the real source name
+/// ("__queue__ House" -> "House", "__radio__ Foo — Bar" -> "Foo — Bar").
+func cleanContextName(_ name: String) -> String {
+    for p in ["__queue__ ", "__radio__ "] {
+        if name.hasPrefix(p) { return String(name.dropFirst(p.count)) }
+    }
+    return name
+}
+
 /// True when a context name is the on-device library (where autoplay lands).
 func isLibraryContextName(_ name: String) -> Bool {
     let n = name.trimmingCharacters(in: .whitespaces)

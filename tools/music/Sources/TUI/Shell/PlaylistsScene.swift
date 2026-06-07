@@ -175,8 +175,36 @@ final class PlaylistsScene: Scene {
     // MARK: playback (user-initiated; brief inline stall acceptable)
 
     private func playTrack(_ trackIndex: Int) {
-        let esc = escapeAppleScriptString(playlists[plCursor])
-        _ = try? syncRun { try await self.backend.runMusic("play track \(trackIndex + 1) of playlist \"\(esc)\"") }
+        // `play track N of playlist X` collapses Apple Music's current playlist to
+        // the library (a 26.x regression), so the playlist won't continue after the
+        // track. Instead build a short tail queue (chosen track + the next ~60) as a
+        // temp "__queue__" playlist and play THAT — Music keeps a real, continuing
+        // context. Off-main so the duplicate loop never freezes the UI; the poller
+        // picks up the new playback.
+        let src = playlists[plCursor]
+        let esc = escapeAppleScriptString(src)
+        let escQ = escapeAppleScriptString("__queue__ \(src)")
+        let start = trackIndex + 1
+        let backend = self.backend
+        DispatchQueue.global().async {
+            _ = try? syncRun {
+                try await backend.runMusic("""
+                    try
+                        if exists playlist "\(escQ)" then delete playlist "\(escQ)"
+                    end try
+                    make new playlist with properties {name:"\(escQ)"}
+                    set total to count of tracks of playlist "\(esc)"
+                    set a to \(start)
+                    if a < 1 then set a to 1
+                    set b to a + 59
+                    if b > total then set b to total
+                    repeat with i from a to b
+                        duplicate track i of playlist "\(esc)" to playlist "\(escQ)"
+                    end repeat
+                    play playlist "\(escQ)"
+                """)
+            }
+        }
     }
     private func playPlaylist(shuffle: Bool) {
         let esc = escapeAppleScriptString(playlists[plCursor])
