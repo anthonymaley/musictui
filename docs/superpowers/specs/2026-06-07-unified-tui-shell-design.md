@@ -96,19 +96,32 @@ final class NowPlayingStore {
 
 ```
  music                                    row 1  (chrome: app label)
- ♫ Now  Playlists  Search  Spkrs          row 2  (tab strip; active highlighted)
+ ♫ Now  Playlists  Spkrs                  row 2  (tab strip; active highlighted)
  ─────────────────────────────────────    row 3  (accent rule)
  [ active scene body ]                     bodyY .. barY-1   (scene-owned region)
  ─────────────────────────────────────
  ▶ Track — Artist                          rich now-playing bar (a few rows):
    Album · ▓▓▓▓▓░░░░ 1:23 / 4:10           track/artist/album, progress+time,
    ♪ Kitchen 60  Office 45   z⇄ r↻          speakers+volume, shuffle/repeat
- z shuffle · 1-4 switch · / filter · q     footer (context-sensitive keys; one digit per visible scene)
+ z shuffle · 1-3 switch · / filter · q     footer (context-sensitive keys; one digit per visible scene)
 ```
 
 - `ScreenFrame` gains `barY` / `barHeight` (rich bar ≈ 3 rows). `bodyY` and scene usable-height shrink by the band.
 - The bar reuses `renderNowPlayingMetadata()` content, fed by the poller snapshot, drawn on **every** frame regardless of scene.
 - Scenes render only into the body rect the shell hands them; no scene knows the bar exists.
+
+### Vertical degradation (not optional)
+
+Chrome + tabs + rule + a 3-row bar + footer is a lot of fixed vertical cost. The shell must degrade by height so the design doesn't collapse on small terminals. Four tiers, chosen by terminal rows; `ScreenFrame` selects the tier and reports the resulting body region:
+
+| Tier | Bar | Tabs | What it shows |
+|---|---|---|---|
+| **Full** | rich, 3 rows | full text tabs (`♫ Now  Playlists  Spkrs`) | track/artist/album · progress+time · speakers+volume · modes |
+| **Compact** | 1 row | full text tabs | `▶ Track — Artist  ▓▓▓░ 1:23/4:10` |
+| **Minimal** | 1 row | compressed tabs (`1·2·3` or initials) | track — artist + tiny progress; tabs as digits only |
+| **Bare** | folded into footer | none | one status line; scene switching by digit still works, no tab strip |
+
+`ScreenFrame` owns the tier decision and exposes `barHeight`, `showTabs`, and the body rect; scenes are unaffected — they just receive a smaller body. **Exact row thresholds are pinned in the implementation plan** (they depend on the final bar row count), but the tier model itself is fixed here so no surface is designed assuming infinite height.
 
 ### Shared keymap
 
@@ -121,7 +134,7 @@ The shell resolves **globals first** in every scene, then delegates the rest to 
 | `<`/`>` | prev / next | `/` filter (where applicable) |
 | `z` | shuffle | `Esc`/`b` pop |
 | `r` | radio | scene-specific actions |
-| `1`–`N`, `Tab` | switch scene (one digit per visible scene; 4 in v1) | |
+| `1`–`N`, `Tab` | switch scene (one digit per visible scene; 3 in v1) | |
 | `q` | quit | |
 
 Transport controls work identically from any scene. That uniformity is the core UX claim.
@@ -132,7 +145,7 @@ Transport controls work identically from any scene. That uniformity is the core 
 |---|---|---|---|
 | **Now Playing** | scrollable queue/timeline (metadata now in bar) | `renderTimelineRows`, `buildPlaylistRows`/`buildStandaloneRows`, `pollNowPlaying` | render into body rect; metadata→bar |
 | **Playlists** | 3-zone rail·hero·preview | the whole v1.8.0 browser + `PlaylistBrowserModel` + enrichment | `Enter` → `router.push(.nowPlaying)` |
-| **Search** | query input + results | search backend, result rendering | inline input field (was modal) |
+| **Search** *(fast-follow)* | query input + results | search backend, `ResultCache` | **mostly new** — `Search` today only prints to stdout (`SearchCommand.swift`); no interactive surface exists to migrate |
 | **Speakers** | outputs list + inline per-speaker volume | `MixerSpeaker`, `MultiSelectList`, `meterBar`, speaker fetch | **merge** picker + mixer into one scene |
 | **Library** *(fast-follow)* | browse all tracks / albums / artists | REST library backend | **mostly new** — no browse-all surface today |
 | **Queue** *(fast-follow, data-gated)* | upcoming tracks | now-playing timeline | verify Apple Music exposes a real queue first |
@@ -151,11 +164,14 @@ The standalone `music speaker` and `music volume` commands remain (one-shot CLI)
 
 ## Scope — v1 vs. fast-follow
 
-**v1 (shippable):** shell core + poller + rich bar + four proven scenes — **Now Playing, Playlists, Search, Speakers**. After these, bare `music` is a complete unified app.
+**v1 (shippable):** shell core + poller + rich bar + the **three scenes that already exist as interactive surfaces** — **Now Playing, Playlists, Speakers**. After these, bare `music` is a complete unified app for the things the app can already do interactively.
 
-**Fast-follow (same architecture, later plan):** **Library** (largest net-new code) and **Queue** (only if Apple Music exposes a reliable upcoming-queue source — verify before building; otherwise fold "up next" into the Now Playing scene).
+**Fast-follow (same architecture, later plans):**
+- **Search** — no interactive surface today (the command only prints to stdout), so the scene is net-new: an inline query field + a results region built on the existing search backend and `ResultCache`. Real work, but well-bounded; sequenced right after the spine is proven.
+- **Library** — the largest net-new code; no browse-all surface exists.
+- **Queue** — only if Apple Music exposes a reliable upcoming-queue source (verify before building; otherwise fold "up next" into the Now Playing scene).
 
-This keeps v1 to surfaces that already exist as code, sharing the new spine, and isolates the two risky/unknown pieces.
+This keeps v1 strictly to surfaces that already exist as interactive code sharing the new spine, and isolates every net-new or unknown piece into fast-follow.
 
 ## Testing
 
@@ -172,9 +188,20 @@ Follows the v1.8.0 pure-core + thin-render seam that produced 21 testable units:
 1. **Concurrency is the real risk.** The poller/lock seam is where this can go wrong (races, exit cleanup, `osascript` subprocess lifetime under rapid quit). Mitigation: build + test it in isolation as build step ①, before any scene exists.
 2. **Queue data may not exist.** AppleScript may not expose the upcoming queue (last session flagged standalone now-playing lacks a reliable queue source). Verify in the plan; Queue scene is conditional on that result.
 3. **Library scope.** Browse-all is the largest unwritten surface; deliberately fast-follow, not v1.
-4. **Rich bar vs. small terminals.** A 3-row bar + chrome + tabs eats vertical space; need a graceful degradation (collapse bar toward compact) below a height threshold. Define thresholds in the plan.
+4. **Rich bar vs. small terminals.** Addressed by the four-tier Vertical Degradation model above (Full/Compact/Minimal/Bare). The tier *model* is fixed; only the exact row thresholds are deferred to the plan. No longer an open design risk — a sizing detail.
 5. **Modal-as-overlay** (vs. today's teardown) is new rendering territory; if overlays prove fiddly, the fallback is the existing exit/re-enter pattern (accept the flash) — not a blocker.
 
 ## Build sequence
 
-① background poller (isolated + tested) → ② shell core (`ScreenFrame` bar/tabs, `Router`, single loop, global keymap) → ③ rich persistent bar → ④ Now Playing scene → ⑤ Playlists scene → ⑥ Speakers scene (merge) → ⑦ Search scene → **[v1 shippable]** → ⑧ Library scene → ⑨ Queue (verify data, then fold or build).
+The first milestone is **not** "shell + all scenes." It is the smallest thing that proves the spine works end to end:
+
+**Milestone 1 — prove the spine:**
+① background poller + store (isolated, its own tests, its own checkpoint — the highest-risk seam, done before anything composes on it) → ② shell core (`Router`, `ScreenFrame` bar/tabs + degradation tiers, single loop, global keymap) → ③ rich persistent bar → ④ **Now Playing** migrated to a scene. *At this point one real scene runs inside the shell with a live bar — the architecture is demonstrated or it isn't, before any fan-out.*
+
+**Milestone 2 — complete v1:**
+⑤ **Playlists** scene → ⑥ **Speakers** scene (the picker+mixer merge) → **[v1 shippable: bare `music` is a unified app]**.
+
+**Fast-follow (separate plans):**
+⑦ **Search** scene (net-new input field + results region) → ⑧ **Library** scene → ⑨ **Queue** (verify Apple Music exposes a real queue, then fold into Now Playing or build standalone).
+
+Sequencing the poller/store as its own tested checkpoint (①) and gating fan-out behind one proven scene (④) is the deliberate de-risking: the part most likely to cause subtle regressions is isolated and verified before anything depends on it.
