@@ -43,7 +43,7 @@ final class NowPlayingScene: Scene {
         // right = Up Next list. Narrow falls back to stacked (art+meta, list below).
         let twoPane = frame.width >= 92
         let leftX = 3
-        let leftW = twoPane ? 40 : (frame.width - 6)
+        let leftW = twoPane ? 44 : (frame.width - 6)
         let listBottom = frame.bodyY + frame.bodyHeight - 1
 
         // --- Left pane: large album art ---
@@ -78,9 +78,9 @@ final class NowPlayingScene: Scene {
         }
 
         // --- Up Next: right pane (wide) or below the metadata (narrow) ---
-        let listX = twoPane ? (leftX + leftW + 3) : leftX
+        let listX = twoPane ? (leftX + leftW + 2) : leftX
         let listY = twoPane ? frame.bodyY : (my + 2)
-        let listW = twoPane ? max(20, frame.width - listX - 2) : (frame.width - 6)
+        let listW = twoPane ? max(20, frame.width - listX - 1) : (frame.width - 6)
         if listY + 1 <= listBottom {
             // Adapt context entries to the timeline-row shape the shared renderer expects.
             let timeline = rows.map { e in

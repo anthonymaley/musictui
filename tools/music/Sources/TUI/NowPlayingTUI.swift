@@ -607,21 +607,24 @@ func renderTimelineRows(
         let row = rows[rowIndex]
         let isCursor = rowIndex == clampedCursor
         let indexText = row.index.map { String(format: "%02d", $0) } ?? "  "
-        let rowText = truncText(row.label, to: width - 8)
+        // Consistent geometry for every row — state is encoded as color/highlight,
+        // never as indentation. A 2-col status slot (▶ for the playing track, else
+        // blank), the index, then the label.
+        let marker = row.isCurrent ? "\u{25B6} " : "  "
+        let label = truncText(row.label, to: max(1, width - 6))
+        let content = "\(marker)\(indexText)  \(label)"
+        let padded = content.count < width ? content + String(repeating: " ", count: width - content.count) : content
 
         out += ANSICode.moveTo(row: tRow, col: x)
-        if row.isCurrent && isCursor {
-            out += " \(ANSICode.cyan)\u{25B8}\(ANSICode.reset)\(ANSICode.green)\u{25B6}\(ANSICode.reset) \(indexText)  \(ANSICode.bold)\(rowText)\(ANSICode.reset)"
+        if isCursor {
+            // Full-width highlight line for the selected row.
+            out += "\(ANSICode.inverse)\(padded)\(ANSICode.reset)"
         } else if row.isCurrent {
-            out += "  \(ANSICode.green)\u{25B6}\(ANSICode.reset) \(indexText)  \(ANSICode.bold)\(rowText)\(ANSICode.reset)"
-        } else if isCursor && row.wasPlayed {
-            out += " \(ANSICode.cyan)\u{25B8}\(ANSICode.reset) \(ANSICode.dim)\(indexText)  \(rowText)\(ANSICode.reset)"
-        } else if isCursor {
-            out += " \(ANSICode.cyan)\u{25B8}\(ANSICode.reset) \(indexText)  \(rowText)"
+            out += "\(ANSICode.lime)\(content)\(ANSICode.reset)"
         } else if row.wasPlayed {
-            out += "\(ANSICode.dim)   \(indexText)  \(rowText)\(ANSICode.reset)"
+            out += "\(ANSICode.dim)\(content)\(ANSICode.reset)"
         } else {
-            out += "   \(indexText)  \(rowText)"
+            out += content
         }
         tRow += 1
     }

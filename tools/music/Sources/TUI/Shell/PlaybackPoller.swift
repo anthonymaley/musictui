@@ -96,7 +96,7 @@ final class PlaybackPoller {
                     surrounding = ctx.tracks
                     contextName = ctx.name
                 }
-                artLines = currentTrackArtLines(width: 36, height: 18)
+                artLines = currentTrackArtLines(width: 44, height: 22)
             }
             store.write(NowPlayingSnapshot(outcome: .active(np), history: history, surrounding: surrounding, contextName: contextName, artLines: artLines))
 
