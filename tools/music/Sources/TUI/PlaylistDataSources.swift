@@ -8,6 +8,40 @@ struct PlaylistDataSources {
     let onTracks: (Int) -> PlaylistPreview?
 }
 
+/// One playlist's rail metadata, persisted between launches so the browser paints
+/// instantly instead of waiting on per-playlist AppleScript (`count of tracks`,
+/// `duration` — slow for large playlists). Keyed by playlist name.
+struct CachedPlaylistMeta: Codable {
+    let count: Int
+    let durationSec: Int
+    let isSmart: Bool
+    let specialKind: String
+}
+
+/// On-disk cache of playlist rail metadata at `~/.config/music/playlist-meta.json`
+/// (same dir as ResultCache). Best-effort: any read/write failure is silent and the
+/// browser falls back to a live (background) fetch.
+enum PlaylistMetaCache {
+    static var path: String {
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        return "\(home)/.config/music/playlist-meta.json"
+    }
+
+    static func load() -> [String: CachedPlaylistMeta] {
+        guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
+              let dict = try? JSONDecoder().decode([String: CachedPlaylistMeta].self, from: data)
+        else { return [:] }
+        return dict
+    }
+
+    static func save(_ dict: [String: CachedPlaylistMeta]) {
+        let dir = (path as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        guard let data = try? JSONEncoder().encode(dict) else { return }
+        try? data.write(to: URL(fileURLWithPath: path))
+    }
+}
+
 /// Parse one `onMeta` result line: "idx|count|durationSeconds|smart|specialKind".
 func parsePlaylistMetaLine(_ line: Substring) -> (index: Int, count: Int, durationSec: Int, isSmart: Bool, specialKind: String)? {
     let f = line.split(separator: "|", maxSplits: 4).map(String.init)
@@ -114,9 +148,30 @@ func makePlaylistDataSources(backend: AppleScriptBackend, names: [String]) -> Pl
         var clauses = ""
         for idx in indices where idx >= 0 && idx < names.count {
             let esc = escapeAppleScriptString(names[idx])
+            // Each playlist is independent: a failure (resolution or any property)
+            // must not abort the whole batch, and each property degrades to a default
+            // rather than throwing. Otherwise one bad entry blanks 8 rows.
             clauses += """
-            set p to playlist "\(esc)"
-            set output to output & "\(idx)|" & (count of tracks of p) & "|" & (duration of p) & "|" & (smart of p) & "|" & (special kind of p as text) & linefeed
+            try
+                set p to playlist "\(esc)"
+                set c to 0
+                try
+                    set c to count of tracks of p
+                end try
+                set d to 0
+                try
+                    set d to duration of p
+                end try
+                set sm to false
+                try
+                    set sm to smart of p
+                end try
+                set sk to "none"
+                try
+                    set sk to (special kind of p as text)
+                end try
+                set output to output & "\(idx)|" & c & "|" & d & "|" & sm & "|" & sk & linefeed
+            end try
 
             """
         }

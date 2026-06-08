@@ -24,8 +24,13 @@ final class PlaylistsScene: Scene {
     private var filterText = ""
     private var filtering = false
 
+    // Off-thread metadata refresh: a background thread fetches via `onMeta` and posts
+    // results to `inbox`; tick() drains them on the main thread, so `meta` stays
+    // main-thread-only and the slow AppleScript never blocks a render frame.
+    private let inboxLock = NSLock()
+    private var inbox: [Int: (Int, Int, Bool, String)] = [:]
+
     private let metaCol = 6
-    private let enrichBatch = 5
 
     init(backend: AppleScriptBackend, playlists: [String], sources: PlaylistDataSources, appQueue: AppQueueStore) {
         self.backend = backend
@@ -33,6 +38,60 @@ final class PlaylistsScene: Scene {
         self.sources = sources
         self.appQueue = appQueue
         self.meta = playlists.map { PlaylistMeta(name: $0) }
+        // Seed the rail from the on-disk cache so it paints fully on first frame;
+        // a background pass then refreshes every playlist and rewrites the cache.
+        let cache = PlaylistMetaCache.load()
+        for i in 0..<meta.count {
+            guard let c = cache[meta[i].name] else { continue }
+            meta[i].trackCount = c.count
+            meta[i].durationSec = c.durationSec
+            meta[i].isSmart = c.isSmart
+            meta[i].specialKind = c.specialKind
+            meta[i].loaded = true
+            loaded.insert(i)
+        }
+        startBackgroundRefresh()
+    }
+
+    /// Refresh every playlist's metadata off the main thread (so render never
+    /// blocks on AppleScript), posting results to `inbox` and rewriting the cache.
+    /// Batches can fail transiently when Music is under concurrent AppleScript load
+    /// at startup (poller + preview fetches), so any index that doesn't come back is
+    /// retried with backoff until all resolve or the attempt cap is hit.
+    private func startBackgroundRefresh() {
+        let names = playlists
+        let sources = self.sources
+        Thread.detachNewThread { [weak self] in
+            var merged = PlaylistMetaCache.load()
+            var pending = Set(0..<names.count)
+            var attempt = 0
+            while !pending.isEmpty && attempt < 5 {
+                attempt += 1
+                let todo = pending.sorted()
+                var i = 0
+                while i < todo.count {
+                    let batch = Array(todo[i..<min(i + 8, todo.count)])
+                    let fetched = sources.onMeta(batch)
+                    if !fetched.isEmpty { self?.postMeta(fetched) }
+                    for (idx, v) in fetched where idx >= 0 && idx < names.count {
+                        merged[names[idx]] = CachedPlaylistMeta(count: v.0, durationSec: v.1, isSmart: v.2, specialKind: v.3)
+                        pending.remove(idx)
+                    }
+                    i += 8
+                }
+                if !pending.isEmpty { Thread.sleep(forTimeInterval: 0.6) } // let Music settle, then retry
+            }
+            PlaylistMetaCache.save(merged)
+        }
+    }
+
+    private func postMeta(_ results: [Int: (Int, Int, Bool, String)]) {
+        inboxLock.lock(); for (k, v) in results { inbox[k] = v }; inboxLock.unlock()
+    }
+
+    private func drainMeta() -> [Int: (Int, Int, Bool, String)] {
+        inboxLock.lock(); defer { inboxLock.unlock() }
+        let r = inbox; inbox = [:]; return r
     }
 
     // MARK: filter helpers
@@ -65,26 +124,16 @@ final class PlaylistsScene: Scene {
     // MARK: Scene
 
     func tick(snapshot: NowPlayingSnapshot) {
-        // One enrichment batch per frame while metadata is incomplete.
-        if loaded.count < meta.count {
-            let vis = visibleIndices()
-            // bodyY+2 .. body bottom approximates the on-screen rail rows; use a
-            // generous window so off-screen-but-soon items still enrich.
-            let onScreen = Array(vis.dropFirst(plScroll).prefix(40))
-            let batch = nextEnrichmentBatch(total: meta.count, loaded: loaded, visible: onScreen, batchSize: enrichBatch)
-            if !batch.isEmpty {
-                let fetched = sources.onMeta(batch)
-                for idx in batch {
-                    if let (count, dur, smart, kind) = fetched[idx] {
-                        meta[idx].trackCount = count
-                        meta[idx].durationSec = dur
-                        meta[idx].isSmart = smart
-                        meta[idx].specialKind = kind
-                    }
-                    meta[idx].loaded = true
-                    loaded.insert(idx)
-                }
-            }
+        // Apply metadata the background refresh thread has fetched (off-main), so
+        // the slow AppleScript never blocks a render frame.
+        let fresh = drainMeta()
+        for (idx, v) in fresh where idx >= 0 && idx < meta.count {
+            meta[idx].trackCount = v.0
+            meta[idx].durationSec = v.1
+            meta[idx].isSmart = v.2
+            meta[idx].specialKind = v.3
+            meta[idx].loaded = true
+            loaded.insert(idx)
         }
         // One preview fetch per frame when the preview pane is shown and empty.
         let z = playlistZones(width: ScreenFrame.current().width)
