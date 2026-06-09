@@ -203,7 +203,7 @@ struct Play: ParsableCommand {
             }
 
             if !playlistName.isEmpty {
-                let escapedQuery = playlistName.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+                let escapedQuery = escapeAppleScriptString(playlistName)
                 let result = try syncRun {
                     try await backend.runMusic("""
                         try
@@ -252,9 +252,9 @@ struct Play: ParsableCommand {
 }
 
 func playLocalSong(backend: AppleScriptBackend, title: String, artist: String?) throws -> Bool {
-    let escapedTitle = title.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+    let escapedTitle = escapeAppleScriptString(title)
     let artistFilter = artist.map {
-        " and artist contains \"\($0.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\""))\""
+        " and artist contains \"\(escapeAppleScriptString($0))\""
     } ?? ""
     let result = try syncRun {
         try await backend.runMusic("""

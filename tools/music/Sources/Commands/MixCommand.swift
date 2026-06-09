@@ -13,15 +13,9 @@ struct Mix: ParsableCommand {
         let devToken = try auth.requireDeveloperToken()
         let userToken = try auth.requireUserToken()
         let api = RESTAPIBackend(developerToken: devToken, userToken: userToken, storefront: auth.storefront())
-        let backend = AppleScriptBackend()
 
         let artistList = artists.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
         let perArtist = max(count / artistList.count, 2)
-
-        let escName = escapeAppleScriptString(name)
-        _ = try syncRun {
-            try await backend.runMusic("make new playlist with properties {name:\"\(escName)\"}")
-        }
 
         var allSongs: [CatalogSong] = []
         for artist in artistList {
@@ -29,26 +23,8 @@ struct Mix: ParsableCommand {
             allSongs.append(contentsOf: songs)
         }
 
-        let ids = allSongs.map(\.id)
-        if !ids.isEmpty {
-            try syncRun { try await api.addToLibrary(songIDs: ids) }
-        }
-
-        // Wait for library sync
-        try syncRun { try await Task.sleep(nanoseconds: 3_000_000_000) }
-
-        for song in allSongs {
-            let escTitle = escapeAppleScriptString(song.title)
-            let escArtist = escapeAppleScriptString(song.artist)
-            _ = try syncRun {
-                try await backend.runMusic("""
-                    set results to (every track of playlist "Library" whose name contains "\(escTitle)" and artist contains "\(escArtist)")
-                    if (count of results) > 0 then
-                        duplicate item 1 of results to playlist "\(escName)"
-                    end if
-                """)
-            }
-        }
+        // One API call creates and populates — no library detour, no sync sleep.
+        _ = try syncRun { try await api.createPlaylist(name: name, songIDs: allSongs.map(\.id)) }
 
         let output = OutputFormat(mode: json ? .json : .human)
         if json {

@@ -79,6 +79,71 @@ struct RESTAPIBackend {
         }
     }
 
+    // MARK: - Library Playlists (require user token)
+
+    struct LibraryPlaylist {
+        let id: String
+        let name: String
+    }
+
+    /// All library playlists, following pagination. User-created playlists are
+    /// all API-visible (verified live); only the built-in smart playlists
+    /// (Music, Recently Added, ...) are AppleScript-only.
+    func libraryPlaylists() async throws -> [LibraryPlaylist] {
+        guard userToken != nil else { throw AuthError.userTokenRequired }
+        var out: [LibraryPlaylist] = []
+        var path: String? = "/v1/me/library/playlists?limit=100"
+        while let p = path {
+            let (data, status) = try await get(p)
+            guard (200...299).contains(status) else { throw APIError.requestFailed(status) }
+            let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+            for item in json?["data"] as? [[String: Any]] ?? [] {
+                let attrs = item["attributes"] as? [String: Any] ?? [:]
+                guard let id = item["id"] as? String, let name = attrs["name"] as? String else { continue }
+                out.append(LibraryPlaylist(id: id, name: name))
+            }
+            path = json?["next"] as? String
+        }
+        return out
+    }
+
+    /// API ID of the library playlist with this exact name, or nil if the API
+    /// can't see it (built-in smart playlists; a locally-created playlist that
+    /// hasn't synced yet).
+    func playlistID(named name: String) async throws -> String? {
+        try await libraryPlaylists().first { $0.name == name }?.id
+    }
+
+    /// Add catalog songs to a library playlist directly — no add-to-library,
+    /// no sync sleep, no AppleScript title lookup. POST returns 204.
+    func addTracksToPlaylist(playlistID: String, songIDs: [String]) async throws {
+        guard userToken != nil else { throw AuthError.userTokenRequired }
+        guard !songIDs.isEmpty else { return }
+        let body = try JSONSerialization.data(withJSONObject: playlistTracksRequestBody(songIDs: songIDs))
+        let (_, status) = try await post("/v1/me/library/playlists/\(playlistID)/tracks", body: body)
+        guard (200...299).contains(status) else {
+            if status == 401 || status == 403 { throw AuthError.userTokenExpired(status) }
+            throw APIError.requestFailed(status)
+        }
+    }
+
+    /// Create a library playlist (optionally with catalog songs in one call)
+    /// and return its API ID.
+    func createPlaylist(name: String, songIDs: [String] = []) async throws -> String {
+        guard userToken != nil else { throw AuthError.userTokenRequired }
+        let body = try JSONSerialization.data(withJSONObject: playlistCreationRequestBody(name: name, songIDs: songIDs))
+        let (data, status) = try await post("/v1/me/library/playlists", body: body)
+        guard (200...299).contains(status) else {
+            if status == 401 || status == 403 { throw AuthError.userTokenExpired(status) }
+            throw APIError.requestFailed(status)
+        }
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        guard let id = (json?["data"] as? [[String: Any]])?.first?["id"] as? String else {
+            throw APIError.noData
+        }
+        return id
+    }
+
     // MARK: - Parsing
 
     private func parseSongs(from data: Data) throws -> [CatalogSong] {
@@ -108,6 +173,23 @@ struct RESTAPIBackend {
             album: attrs["albumName"] as? String ?? ""
         )
     }
+}
+
+/// Body for POST /v1/me/library/playlists/{id}/tracks (verified against the
+/// LibraryPlaylistTracksRequest schema: the wrapper field is `data`, catalog
+/// songs use type `songs`). Pure, for testability.
+func playlistTracksRequestBody(songIDs: [String]) -> [String: Any] {
+    ["data": songIDs.map { ["id": $0, "type": "songs"] }]
+}
+
+/// Body for POST /v1/me/library/playlists, optionally seeding tracks via the
+/// `relationships.tracks` shape so create+populate is a single request. Pure.
+func playlistCreationRequestBody(name: String, songIDs: [String]) -> [String: Any] {
+    var body: [String: Any] = ["attributes": ["name": name]]
+    if !songIDs.isEmpty {
+        body["relationships"] = ["tracks": playlistTracksRequestBody(songIDs: songIDs)]
+    }
+    return body
 }
 
 enum APIError: Error, LocalizedError {

@@ -106,8 +106,8 @@ func pollSurroundingTracks(backend: AppleScriptBackend = AppleScriptBackend()) -
 }
 
 func pollAlbumTracks(for np: NowPlayingState, backend: AppleScriptBackend = AppleScriptBackend()) -> [TrackListEntry] {
-    let album = np.album.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-    let artist = np.artist.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+    let album = escapeAppleScriptString(np.album)
+    let artist = escapeAppleScriptString(np.artist)
     let currentTitle = np.track
     let currentArtist = np.artist
 
@@ -311,14 +311,9 @@ func trackKey(title: String, artist: String) -> String {
 /// caller can surface "not found" instead of silently doing nothing.
 @discardableResult
 func playLibraryTrack(backend: AppleScriptBackend, title: String, artist: String) -> Bool {
-    let escapedTitle = escapeAppleScriptString(title)
-    let escapedArtist = escapeAppleScriptString(artist)
     guard let result = try? syncRun({
         try await backend.runMusic("""
-            set results to (every track of playlist "Library" whose name is "\(escapedTitle)" and artist is "\(escapedArtist)")
-            if (count of results) = 0 then
-                set results to (every track of playlist "Library" whose name contains "\(escapedTitle)" and artist contains "\(escapedArtist)")
-            end if
+            \(libraryTrackLookupScript(title: title, artist: artist))
             if (count of results) > 0 then
                 play item 1 of results
                 return "PLAYED"

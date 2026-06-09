@@ -186,62 +186,24 @@ struct PlaylistCreate: ParsableCommand {
         let devToken = try auth.requireDeveloperToken()
         let userToken = try auth.requireUserToken()
         let api = RESTAPIBackend(developerToken: devToken, userToken: userToken, storefront: auth.storefront())
-        let backend = AppleScriptBackend()
 
-        let body: [String: Any] = ["attributes": ["name": name]]
-        let bodyData = try JSONSerialization.data(withJSONObject: body)
-        let (_, status) = try syncRun { try await api.post("/v1/me/library/playlists", body: bodyData) }
-        guard (200...299).contains(status) else {
-            throw APIError.requestFailed(status)
-        }
-
-        if indices.isEmpty {
-            print("Created playlist '\(name)'.")
-            return
-        }
-
+        // One API call creates the playlist and seeds the tracks — no
+        // add-to-library detour, no sync sleep, no per-track AppleScript.
         let cache = ResultCache()
-        var addedCount = 0
-        var ids: [String] = []
+        var songs: [SongResult] = []
         for idx in indices {
-            if let song = try? cache.lookupSong(index: idx) {
-                ids.append(song.catalogId)
+            if let song = try? cache.lookupSong(index: idx), !song.catalogId.isEmpty {
+                songs.append(song)
             }
         }
+        _ = try syncRun { try await api.createPlaylist(name: name, songIDs: songs.map(\.catalogId)) }
 
-        if !ids.isEmpty {
-            try syncRun { try await api.addToLibrary(songIDs: ids) }
-            withStatus("Syncing library...") {
-                try! syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
-            }
-
-            let total = indices.count
-            var count = 0
-            for idx in indices {
-                if let song = try? cache.lookupSong(index: idx) {
-                    let et = song.title.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-                    let ea = song.artist.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-                    _ = try? syncRun {
-                        try await backend.runMusic("""
-                            set results to (every track of playlist "Library" whose name is "\(et)" and artist is "\(ea)")
-                            if (count of results) = 0 then
-                                set results to (every track of playlist "Library" whose name contains "\(et)" and artist contains "\(ea)")
-                            end if
-                            if (count of results) > 0 then
-                                duplicate item 1 of results to playlist "\(escapeAppleScriptString(name))"
-                            end if
-                        """)
-                    }
-                    addedCount += 1
-                    count += 1
-                    updateStatus("Adding tracks... \(count)/\(total)")
-                    print("  + \(song.title) — \(song.artist)")
-                }
-            }
-            clearStatus()
+        for song in songs { print("  + \(song.title) — \(song.artist)") }
+        if songs.isEmpty {
+            print("Created playlist '\(name)'.")
+        } else {
+            print("Created '\(name)' with \(songs.count) tracks.")
         }
-
-        print("Created '\(name)' with \(addedCount) tracks.")
     }
 }
 
@@ -272,44 +234,17 @@ struct PlaylistAdd: ParsableCommand {
         let ints = items.compactMap { Int($0) }
         if ints.count == items.count && !ints.isEmpty {
             let cache = ResultCache()
-            var ids: [String] = []
             var songs: [SongResult] = []
             for idx in ints {
                 if let song = try? cache.lookupSong(index: idx) {
-                    ids.append(song.catalogId)
                     songs.append(song)
                 }
             }
-
-            if !ids.isEmpty {
-                try syncRun { try await api.addToLibrary(songIDs: ids) }
-                withStatus("Syncing library...") {
-                    try! syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
-                }
-
-                let total = songs.count
-                var count = 0
-                for song in songs {
-                    let et = song.title.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-                    let ea = song.artist.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-                    _ = try? syncRun {
-                        try await backend.runMusic("""
-                            set results to (every track of playlist "Library" whose name is "\(et)" and artist is "\(ea)")
-                            if (count of results) = 0 then
-                                set results to (every track of playlist "Library" whose name contains "\(et)" and artist contains "\(ea)")
-                            end if
-                            if (count of results) > 0 then
-                                duplicate item 1 of results to playlist "\(escapeAppleScriptString(playlist))"
-                            end if
-                        """)
-                    }
-                    count += 1
-                    updateStatus("Adding tracks... \(count)/\(total)")
-                    print("  + \(song.title) — \(song.artist)")
-                }
-                clearStatus()
-                print("Added \(songs.count) track(s) to '\(playlist)'.")
-            }
+            guard !songs.isEmpty else { return }
+            try addSongs(songs.map { CatalogSong(id: $0.catalogId, title: $0.title, artist: $0.artist, album: $0.album) },
+                         to: playlist, api: api, backend: backend)
+            for song in songs { print("  + \(song.title) — \(song.artist)") }
+            print("Added \(songs.count) track(s) to '\(playlist)'.")
             return
         }
 
@@ -325,26 +260,28 @@ struct PlaylistAdd: ParsableCommand {
             throw ExitCode.failure
         }
         print("Found: \(song.title) — \(song.artist)")
-
-        try syncRun { try await api.addToLibrary(songIDs: [song.id]) }
-        withStatus("Syncing library...") {
-            try! syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
-        }
-
-        let escapedTitle = song.title.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        let escapedArtist = song.artist.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        _ = try syncRun {
-            try await backend.runMusic("""
-                set results to (every track of playlist "Library" whose name is "\(escapedTitle)" and artist is "\(escapedArtist)")
-                if (count of results) = 0 then
-                    set results to (every track of playlist "Library" whose name contains "\(escapedTitle)" and artist contains "\(escapedArtist)")
-                end if
-                if (count of results) > 0 then
-                    duplicate item 1 of results to playlist "\(escapeAppleScriptString(playlist))"
-                end if
-            """)
-        }
+        try addSongs([song], to: playlist, api: api, backend: backend)
         print("Added to '\(playlist)'.")
+    }
+}
+
+/// Add catalog songs to a named playlist: one direct API call when the API can
+/// see the playlist (every user-created playlist — verified live); otherwise
+/// the legacy fallback (add to library, wait for sync, AppleScript duplicate).
+func addSongs(_ songs: [CatalogSong], to playlist: String, api: RESTAPIBackend, backend: AppleScriptBackend) throws {
+    let ids = songs.map(\.id).filter { !$0.isEmpty }
+    if let plID = try? syncRun({ try await api.playlistID(named: playlist) }) {
+        try syncRun { try await api.addTracksToPlaylist(playlistID: plID, songIDs: ids) }
+        return
+    }
+    try syncRun { try await api.addToLibrary(songIDs: ids) }
+    withStatus("Syncing library...") {
+        _ = try? syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
+    }
+    for song in songs {
+        if !duplicateLibraryTrack(backend: backend, title: song.title, artist: song.artist, toPlaylist: playlist) {
+            print("  ✗ Couldn't add: \(song.title) — \(song.artist)")
+        }
     }
 }
 
@@ -388,7 +325,7 @@ struct PlaylistShare: ParsableCommand {
         let message = "Check out my playlist '\(name)': \(trackList.trimmingCharacters(in: .whitespacesAndNewlines))"
 
         if let recipient = imessage {
-            let escaped = message.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+            let escaped = escapeAppleScriptString(message)
             _ = try syncRun {
                 try await backend.run("""
                     tell application "Messages"
@@ -400,7 +337,7 @@ struct PlaylistShare: ParsableCommand {
             }
             print("Sent to \(recipient) via iMessage.")
         } else if let addr = email {
-            let escaped = message.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+            let escaped = escapeAppleScriptString(message)
             _ = try syncRun {
                 try await backend.run("""
                     tell application "Mail"
@@ -438,19 +375,7 @@ struct PlaylistTemp: ParsableCommand {
         }
 
         for i in stride(from: 0, to: items.count, by: 2) {
-            let title = items[i].replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-            let artist = items[i + 1].replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-            _ = try syncRun {
-                try await backend.runMusic("""
-                    set results to (every track of playlist "Library" whose name is "\(title)" and artist is "\(artist)")
-                    if (count of results) = 0 then
-                        set results to (every track of playlist "Library" whose name contains "\(title)" and artist contains "\(artist)")
-                    end if
-                    if (count of results) > 0 then
-                        duplicate item 1 of results to playlist "\(escapeAppleScriptString(name))"
-                    end if
-                """)
-            }
+            duplicateLibraryTrack(backend: backend, title: items[i], artist: items[i + 1], toPlaylist: name)
         }
 
         // Split into separate calls to avoid parameter error -50
@@ -478,13 +403,8 @@ struct PlaylistCreateFrom: ParsableCommand {
         let devToken = try auth.requireDeveloperToken()
         let userToken = try auth.requireUserToken()
         let api = RESTAPIBackend(developerToken: devToken, userToken: userToken, storefront: auth.storefront())
-        let backend = AppleScriptBackend()
 
-        _ = try syncRun {
-            try await backend.runMusic("make new playlist with properties {name:\"\(escapeAppleScriptString(name))\"}")
-        }
-
-        var added: [(title: String, artist: String)] = []
+        var found: [CatalogSong] = []
         var failed: [(title: String, artist: String)] = []
         for i in stride(from: 0, to: items.count, by: 2) {
             let title = items[i]
@@ -492,14 +412,8 @@ struct PlaylistCreateFrom: ParsableCommand {
             do {
                 let songs = try syncRun { try await api.searchSongs(query: "\(title) \(artist)", limit: 1) }
                 if let song = songs.first {
-                    do {
-                        try syncRun { try await api.addToLibrary(songIDs: [song.id]) }
-                        added.append((title: song.title, artist: song.artist))
-                        print("  + \(song.title) — \(song.artist)")
-                    } catch {
-                        failed.append((title: title, artist: artist))
-                        print("  ✗ Failed to add: \(title) — \(artist)")
-                    }
+                    found.append(song)
+                    print("  + \(song.title) — \(song.artist)")
                 } else {
                     failed.append((title: title, artist: artist))
                     print("  ✗ Not found: \(title) — \(artist)")
@@ -510,38 +424,15 @@ struct PlaylistCreateFrom: ParsableCommand {
             }
         }
 
-        guard !added.isEmpty else {
-            print("No tracks were added. Playlist '\(name)' is empty.")
-            return
+        guard !found.isEmpty else {
+            print("No tracks found. Playlist not created.")
+            throw ExitCode.failure
         }
 
-        // Wait for library sync then add to playlist
-        withStatus("Syncing library...") {
-            try! syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
-        }
+        // Create + populate in one API call (no library detour, no sync sleep).
+        _ = try syncRun { try await api.createPlaylist(name: name, songIDs: found.map(\.id)) }
 
-        let total = added.count
-        var count = 0
-        for track in added {
-            let escapedTitle = track.title.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-            let escapedArtist = track.artist.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-            _ = try syncRun {
-                try await backend.runMusic("""
-                    set results to (every track of playlist "Library" whose name is "\(escapedTitle)" and artist is "\(escapedArtist)")
-                    if (count of results) = 0 then
-                        set results to (every track of playlist "Library" whose name contains "\(escapedTitle)" and artist contains "\(escapedArtist)")
-                    end if
-                    if (count of results) > 0 then
-                        duplicate item 1 of results to playlist "\(escapeAppleScriptString(name))"
-                    end if
-                """)
-            }
-            count += 1
-            updateStatus("Adding tracks... \(count)/\(total)")
-        }
-        clearStatus()
-
-        print("Created '\(name)' with \(added.count) tracks.")
+        print("Created '\(name)' with \(found.count) tracks.")
         if !failed.isEmpty {
             print("Failed (\(failed.count)): \(failed.map { "\($0.title) — \($0.artist)" }.joined(separator: ", "))")
         }

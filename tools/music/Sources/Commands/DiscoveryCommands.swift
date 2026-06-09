@@ -275,14 +275,9 @@ func handleSongAction(_ action: MultiSelectAction, songs: [CatalogSong], api: RE
     switch action {
     case .played(let idx):
         let song = songs[idx]
-        let escapedTitle = song.title.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-        let escapedArtist = song.artist.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         let result = try syncRun {
             try await backend.runMusic("""
-                set results to (every track of playlist "Library" whose name is "\(escapedTitle)" and artist is "\(escapedArtist)")
-                if (count of results) = 0 then
-                    set results to (every track of playlist "Library" whose name contains "\(escapedTitle)" and artist contains "\(escapedArtist)")
-                end if
+                \(libraryTrackLookupScript(title: song.title, artist: song.artist))
                 if (count of results) > 0 then
                     play item 1 of results
                     return "OK"
@@ -294,12 +289,7 @@ func handleSongAction(_ action: MultiSelectAction, songs: [CatalogSong], api: RE
         if result.trimmingCharacters(in: .whitespacesAndNewlines) == "NOT_FOUND" {
             try syncRun { try await api.addToLibrary(songIDs: [song.id]) }
             try syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
-            _ = try syncRun {
-                try await backend.runMusic("""
-                    set results to (every track of playlist "Library" whose name contains "\(escapedTitle)" and artist contains "\(escapedArtist)")
-                    if (count of results) > 0 then play item 1 of results
-                """)
-            }
+            _ = playLibraryTrack(backend: backend, title: song.title, artist: song.artist)
         }
         print("Playing: \(song.title) — \(song.artist)")
 
@@ -314,28 +304,8 @@ func handleSongAction(_ action: MultiSelectAction, songs: [CatalogSong], api: RE
             return
         }
         let name = "New Playlist \(Int(Date().timeIntervalSince1970) % 100000)"
-        let ids = indices.map { songs[$0].id }
-        try syncRun { try await api.addToLibrary(songIDs: ids) }
-        _ = try syncRun {
-            try await backend.runMusic("make new playlist with properties {name:\"\(name)\"}")
-        }
-        try syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
-        for idx in indices {
-            let s = songs[idx]
-            let et = s.title.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-            let ea = s.artist.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-            _ = try? syncRun {
-                try await backend.runMusic("""
-                    set results to (every track of playlist "Library" whose name is "\(et)" and artist is "\(ea)")
-                    if (count of results) = 0 then
-                        set results to (every track of playlist "Library" whose name contains "\(et)" and artist contains "\(ea)")
-                    end if
-                    if (count of results) > 0 then
-                        duplicate item 1 of results to playlist "\(name)"
-                    end if
-                """)
-            }
-        }
+        // One API call creates and populates — no library detour, no sync sleep.
+        _ = try syncRun { try await api.createPlaylist(name: name, songIDs: indices.map { songs[$0].id }) }
         print("Created '\(name)' with \(indices.count) tracks.")
 
     case .shuffled(let indices):
@@ -344,30 +314,16 @@ func handleSongAction(_ action: MultiSelectAction, songs: [CatalogSong], api: RE
             return
         }
         let name = "__temp__\(Int(Date().timeIntervalSince1970))"
-        let ids = indices.map { songs[$0].id }
-        try syncRun { try await api.addToLibrary(songIDs: ids) }
-        _ = try syncRun {
-            try await backend.runMusic("make new playlist with properties {name:\"\(name)\"}")
-        }
-        try syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
-        for idx in indices {
-            let s = songs[idx]
-            let et = s.title.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-            let ea = s.artist.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-            _ = try? syncRun {
-                try await backend.runMusic("""
-                    set results to (every track of playlist "Library" whose name is "\(et)" and artist is "\(ea)")
-                    if (count of results) = 0 then
-                        set results to (every track of playlist "Library" whose name contains "\(et)" and artist contains "\(ea)")
-                    end if
-                    if (count of results) > 0 then
-                        duplicate item 1 of results to playlist "\(name)"
-                    end if
-                """)
-            }
+        // Create + populate server-side, then wait (bounded poll, not a blind
+        // sleep) for the playlist to sync locally — AppleScript can only play
+        // what the local Music.app can see.
+        _ = try syncRun { try await api.createPlaylist(name: name, songIDs: indices.map { songs[$0].id }) }
+        guard waitForLocalPlaylist(backend: backend, name: name, minTracks: indices.count) else {
+            print("Created '\(name)' but it hasn't synced to this Mac yet — try `music play \(name)` in a moment.")
+            return
         }
         _ = try syncRun { try await backend.runMusic("set shuffle enabled to true") }
-        _ = try syncRun { try await backend.runMusic("play playlist \"\(name)\"") }
+        _ = try syncRun { try await backend.runMusic("play playlist \"\(escapeAppleScriptString(name))\"") }
         print("Shuffling \(indices.count) tracks. Run `music playlist cleanup` when done.")
 
     case .confirmed, .cancelled:

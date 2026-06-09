@@ -20,11 +20,16 @@ struct Add: ParsableCommand {
 
         if let catalogID = id {
             try syncRun { try await api.addToLibrary(songIDs: [catalogID]) }
-            if to.isEmpty {
-                print(json ? "{\"added\":\"\(catalogID)\"}" : "Added (id: \(catalogID)).")
-                return
+            // The API playlist-add only needs the ID (this path used to fall
+            // through silently because it had no title for the AppleScript lookup).
+            let backend = AppleScriptBackend()
+            for pl in to {
+                try addSongs([CatalogSong(id: catalogID, title: "(id \(catalogID))", artist: "", album: "")],
+                             to: pl, api: api, backend: backend)
+                print("Added to '\(pl)'.")
             }
-            trackTitle = nil
+            print(json ? "{\"added\":\"\(catalogID)\"}" : "Added (id: \(catalogID)).")
+            return
         } else if query.count == 1, let index = Int(query[0]) {
             let cache = ResultCache()
             let song = try cache.lookupSong(index: index)
@@ -55,8 +60,6 @@ struct Add: ParsableCommand {
         if let song = songToAdd {
             print("Found: \(song.title) — \(song.artist) [\(song.album)]")
             try syncRun { try await api.addToLibrary(songIDs: [song.id]) }
-            trackTitle = song.title
-            trackArtist = song.artist
 
             if to.isEmpty {
                 if json {
@@ -69,28 +72,24 @@ struct Add: ParsableCommand {
             }
         }
 
-        if !to.isEmpty, let title = trackTitle, let artist = trackArtist {
+        if !to.isEmpty {
             let backend = AppleScriptBackend()
-            let escapedTitle = title.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-            let escapedArtist = artist.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
-
-            if songToAdd != nil {
-                try syncRun { try await Task.sleep(nanoseconds: 4_000_000_000) }
-            }
-
-            for pl in to {
-                _ = try syncRun {
-                    try await backend.runMusic("""
-                        set results to (every track of playlist "Library" whose name is "\(escapedTitle)" and artist is "\(escapedArtist)")
-                        if (count of results) = 0 then
-                            set results to (every track of playlist "Library" whose name contains "\(escapedTitle)" and artist contains "\(escapedArtist)")
-                        end if
-                        if (count of results) > 0 then
-                            duplicate item 1 of results to playlist "\(escapeAppleScriptString(pl))"
-                        end if
-                    """)
+            if let song = songToAdd {
+                // Catalog ID known: direct API add per playlist (no sync sleep).
+                for pl in to {
+                    try addSongs([song], to: pl, api: api, backend: backend)
+                    print("Added to '\(pl)'.")
                 }
-                print("Added to '\(pl)'.")
+            } else if let title = trackTitle, let artist = trackArtist {
+                // Current track (no catalog ID): it's already in the library, so
+                // the AppleScript duplicate is direct — no sync wait needed.
+                for pl in to {
+                    if duplicateLibraryTrack(backend: backend, title: title, artist: artist, toPlaylist: pl) {
+                        print("Added to '\(pl)'.")
+                    } else {
+                        print("Couldn't add '\(title)' to '\(pl)'.")
+                    }
+                }
             }
         }
     }
