@@ -119,13 +119,19 @@ final class SpeakersScene: Scene {
             guard y <= bottom else { break }
             out += ANSICode.moveTo(row: y, col: 3)
             let isCursor = i == cursor
-            let marker = isCursor ? "\(ANSICode.cyan)\u{25B8}\(ANSICode.reset)" : " "
+            let marker = " "
             let dot = row.active ? "\(ANSICode.lime)\u{25CF}\(ANSICode.reset)" : "\(ANSICode.dim)\u{25CB}\(ANSICode.reset)"
             let name = truncText(row.name, to: nameW)
             let padName = name + String(repeating: " ", count: max(0, nameW - name.count))
-            let nameStr = row.active
-                ? "\(ANSICode.brightWhite)\(padName)\(ANSICode.reset)"
-                : "\(ANSICode.dim)\(padName)\(ANSICode.reset)"
+            // Same selection language as the other tabs: inverse-video cursor.
+            let nameStr: String
+            if isCursor {
+                nameStr = "\(ANSICode.inverse)\(padName)\(ANSICode.reset)"
+            } else if row.active {
+                nameStr = "\(ANSICode.brightWhite)\(padName)\(ANSICode.reset)"
+            } else {
+                nameStr = "\(ANSICode.dim)\(padName)\(ANSICode.reset)"
+            }
             let bar = meterBar(value: row.volume, width: barW)
             let vol = String(format: "%3d", row.volume)
             out += "\(marker) \(dot) \(nameStr) \(bar) \(vol)"
@@ -146,6 +152,14 @@ final class SpeakersScene: Scene {
             cursor = max(0, cursor - 1); return .redraw
         case .down:
             cursor = min(rows.count - 1, cursor + 1); return .redraw
+        case .pageUp:
+            cursor = max(0, cursor - 5); return .redraw
+        case .pageDown:
+            cursor = min(rows.count - 1, cursor + 5); return .redraw
+        case .home:
+            cursor = 0; return .redraw
+        case .end:
+            cursor = rows.count - 1; return .redraw
         case .enter:
             rows[cursor].active.toggle()
             lastMutation = Date()

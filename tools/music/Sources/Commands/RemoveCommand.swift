@@ -10,9 +10,9 @@ struct Remove: ParsableCommand {
         let backend = AppleScriptBackend()
 
         let trackResult = try syncRun {
-            try await backend.runMusic("return name of current track & \"|\" & artist of current track")
+            try await backend.runMusic("return name of current track & (ASCII character 31) & artist of current track")
         }
-        let parts = trackResult.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "|")
+        let parts = trackResult.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: asFieldSep)
         guard parts.count >= 2 else {
             print("Nothing playing.")
             throw ExitCode.failure

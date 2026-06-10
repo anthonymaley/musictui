@@ -173,10 +173,16 @@ func runShell() {
             continue
         }
 
-        // 2) Tab cycles scenes.
+        // 2) Tab cycles scenes; Shift-Tab cycles backwards.
         if case .char("\t") = key {
             if let idx = tabs.firstIndex(where: { $0.id == router.active }) {
                 switchOrExplain(tabs[(idx + 1) % tabs.count].id)
+            }
+            continue
+        }
+        if case .shiftTab = key {
+            if let idx = tabs.firstIndex(where: { $0.id == router.active }) {
+                switchOrExplain(tabs[(idx + tabs.count - 1) % tabs.count].id)
             }
             continue
         }

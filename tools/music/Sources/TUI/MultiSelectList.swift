@@ -171,7 +171,11 @@ func runMultiSelectList(
                     return a.action(cursor, selectedIndices())
                 }
             }
-        case .f7, .f9:
+        case .pageUp, .home:
+            cursor = 0
+        case .pageDown, .end:
+            cursor = max(0, items.count - 1)
+        case .f7, .f9, .shiftTab:
             break
         }
         render()

@@ -459,6 +459,53 @@ func showNowPlaying(json: Bool = false, waitForPlay: Bool = false) {
     }
 }
 
+/// Parse a seek target: "+30"/"-30" = relative seconds, "90" = absolute
+/// seconds, "1:30" = absolute m:ss. nil on garbage. Pure.
+func parseSeekTarget(_ value: String) -> (delta: Int?, absolute: Int?)? {
+    let v = value.trimmingCharacters(in: .whitespaces)
+    if v.hasPrefix("+") || v.hasPrefix("-") {
+        guard let d = Int(v) else { return nil }
+        return (delta: d, absolute: nil)
+    }
+    if v.contains(":") {
+        let parts = v.split(separator: ":")
+        guard parts.count == 2, let m = Int(parts[0]), let s = Int(parts[1]), m >= 0, (0..<60).contains(s) else { return nil }
+        return (delta: nil, absolute: m * 60 + s)
+    }
+    guard let abs = Int(v), abs >= 0 else { return nil }
+    return (delta: nil, absolute: abs)
+}
+
+struct Seek: ParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Seek within the current track.")
+    @Argument(help: "+30 / -30 (relative seconds), 90 (seconds), or 1:30") var position: String
+    @Flag(name: .long, help: "Output JSON") var json = false
+    func run() throws {
+        guard let target = parseSeekTarget(position) else {
+            throw ValidationError("Position must be +N / -N, seconds, or m:ss (e.g. +30, 90, 1:30).")
+        }
+        let backend = AppleScriptBackend()
+        let script = target.delta.map { "set player position to (player position + \($0))" }
+            ?? "set player position to \(target.absolute!)"
+        let result = try syncRun {
+            try await backend.runMusic("""
+                if player state is stopped then return "NOTHING"
+                \(script)
+                delay 0.2
+                set p to player position
+                return (round p) as text
+            """)
+        }
+        let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed == "NOTHING" {
+            print(json ? "{\"ok\":false,\"error\":\"nothing playing\"}" : "Nothing playing.")
+            throw ExitCode.failure
+        }
+        let pos = Int(trimmed) ?? 0
+        print(json ? "{\"ok\":true,\"position\":\(pos)}" : "Position \(formatTime(pos)).")
+    }
+}
+
 struct Shuffle: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Toggle shuffle (or set on/off).")
     @Argument(help: "on or off (omit to toggle)") var state: String?

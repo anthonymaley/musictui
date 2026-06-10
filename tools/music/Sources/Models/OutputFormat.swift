@@ -30,7 +30,8 @@ struct OutputFormat {
     }
 
     private func renderHuman(_ dict: [String: Any]) -> String {
-        let values = dict.values.map { "\($0)" }
+        // Sorted for deterministic output — Dictionary.values has no stable order.
+        let values = dict.sorted { $0.key < $1.key }.map { "\($0.value)" }
         return values.joined(separator: " — ")
     }
 

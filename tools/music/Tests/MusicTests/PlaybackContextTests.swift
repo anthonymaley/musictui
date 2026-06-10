@@ -4,8 +4,10 @@ import XCTest
 
 final class PlaybackContextTests: XCTestCase {
     func testParsesWindowMarksCurrentByIndex() {
-        // Format: "name\ncurrentIndex\ntotal\nwindowStart\nidx|title|artist..."
-        let raw = "Friday Mix\n3\n42\n2\n2|Song B|Artist B\n3|Song C|Artist C\n4|Song C|Artist C"
+        // Format: "name\ncurrentIndex\ntotal\nwindowStart\nidx␟title␟artist..."
+        // (fields are ASCII unit separator — titles can legally contain "|")
+        let fs = String(asFieldSep)
+        let raw = "Friday Mix\n3\n42\n2\n2\(fs)Song B\(fs)Artist B\n3\(fs)Song C\(fs)Artist C\n4\(fs)Song C\(fs)Artist C"
         let q = parseContextQueue(raw)
         XCTAssertEqual(q.name, "Friday Mix")
         XCTAssertEqual(q.currentIndex, 3)

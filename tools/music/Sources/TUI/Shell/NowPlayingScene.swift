@@ -26,7 +26,7 @@ func continuationAction(for key: KeyPress) -> ContinuationAction? {
 final class NowPlayingScene: Scene {
     let id: SceneID = .nowPlaying
     let tabTitle = "Now"
-    var footerHint: String { "\u{2191}\u{2193} Browse  Enter Jump  \u{2190}\u{2192} Seek  n Next\u{2011}up" }
+    var footerHint: String { "\u{2191}\u{2193} Browse  Enter Jump  \u{2190}\u{2192} Seek  l \u{2665}  n Next\u{2011}up" }
 
     private let backend: AppleScriptBackend
     private let appQueue: AppQueueStore
@@ -107,7 +107,9 @@ final class NowPlayingScene: Scene {
         }
 
         guard case .active(let np) = snapshot.outcome else {
-            out += ANSICode.moveTo(row: frame.bodyY + 1, col: 3) + "\(ANSICode.dim)Nothing playing.\(ANSICode.reset)"
+            // The empty state is the on-ramp, not a dead end.
+            out += ANSICode.moveTo(row: frame.bodyY + 1, col: 3)
+            out += "\(ANSICode.dim)Nothing playing \u{2014} press \(ANSICode.reset)2\(ANSICode.dim) to browse playlists, \(ANSICode.reset)z\(ANSICode.dim) to shuffle.\(ANSICode.reset)"
             return out
         }
 
@@ -119,7 +121,9 @@ final class NowPlayingScene: Scene {
         let listBottom = frame.bodyY + frame.bodyHeight - 1
 
         // --- Left pane: large album art ---
-        let artLines = snapshot.artLines
+        // The art is rendered at a fixed 44 columns; below ~50 columns the
+        // chafa lines wrap and corrupt the whole frame — skip art entirely.
+        let artLines = frame.width >= 52 ? snapshot.artLines : []
         let artRows = min(artLines.count, max(0, frame.bodyHeight - 7))
         for i in 0..<artRows {
             out += ANSICode.moveTo(row: frame.bodyY + i, col: leftX) + "\(artLines[i])\(ANSICode.reset)"
@@ -264,6 +268,18 @@ final class NowPlayingScene: Scene {
         case .down:
             guard !rows.isEmpty else { return .none }
             cursor = min(max(0, rows.count - 1), cursor + 1); return .redraw
+        case .pageUp:
+            guard !rows.isEmpty else { return .none }
+            cursor = max(0, cursor - 10); return .redraw
+        case .pageDown:
+            guard !rows.isEmpty else { return .none }
+            cursor = min(max(0, rows.count - 1), cursor + 10); return .redraw
+        case .home:
+            guard !rows.isEmpty else { return .none }
+            cursor = 0; return .redraw
+        case .end:
+            guard !rows.isEmpty else { return .none }
+            cursor = rows.count - 1; return .redraw
         case .enter:
             guard cursor < rows.count else { return .none }
             // Jump within the app-owned queue by the row's play-order position.
@@ -294,6 +310,28 @@ final class NowPlayingScene: Scene {
                     }
                 }
                 try require(playLibraryTrack(backend: backend, title: row.name, artist: row.artist), "'\(row.name)' not found in the library.")
+            }
+            return .redraw
+        case .char("l"):
+            // Toggle favorite on the current track (macOS 26: `favorited`, the
+            // old `loved` property errors). State isn't polled — the toast IS
+            // the feedback.
+            let status = self.status
+            actions.run("Favorite") {
+                let result = try syncRun {
+                    try await self.backend.runMusic("""
+                        if player state is stopped then return "NOTHING"
+                        set favorited of current track to (not favorited of current track)
+                        if favorited of current track then
+                            return "ON" & (ASCII character 31) & name of current track
+                        end if
+                        return "OFF" & (ASCII character 31) & name of current track
+                    """)
+                }
+                let parts = result.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: asFieldSep).map(String.init)
+                try require(parts.first != "NOTHING", "Nothing playing.")
+                let title = parts.count > 1 ? parts[1] : "track"
+                status.post(parts.first == "ON" ? "\u{2665} Favorited '\(title)'" : "Unfavorited '\(title)'")
             }
             return .redraw
         case .left:

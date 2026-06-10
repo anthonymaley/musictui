@@ -42,12 +42,13 @@ func pollNowPlaying(backend: AppleScriptBackend = AppleScriptBackend()) -> PollO
             try
                 set state to player state as text
                 if state is "stopped" then return "STOPPED"
+                set fs to (ASCII character 31)
                 set t to name of current track
                 set a to artist of current track
                 set al to album of current track
                 set d to duration of current track
                 set p to player position
-                return t & "|" & a & "|" & al & "|" & (round d) & "|" & (round p) & "|" & state
+                return t & fs & a & fs & al & fs & (round d) & fs & (round p) & fs & state
             end try
             return "STOPPED"
         """)
@@ -55,7 +56,7 @@ func pollNowPlaying(backend: AppleScriptBackend = AppleScriptBackend()) -> PollO
 
     let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
     if trimmed == "STOPPED" { return .stopped }
-    let parts = trimmed.split(separator: "|", maxSplits: 5).map(String.init)
+    let parts = trimmed.split(separator: asFieldSep, maxSplits: 5).map(String.init)
     guard parts.count >= 6 else { return .unavailable }
 
     return .active(NowPlayingState(
@@ -74,6 +75,7 @@ func pollSurroundingTracks(backend: AppleScriptBackend = AppleScriptBackend()) -
                 set idx to index of ct
                 set total to count of tracks of cp
                 set output to ""
+                set fs to (ASCII character 31)
                 set startIdx to idx - 4
                 if startIdx < 1 then set startIdx to 1
                 set endIdx to idx + 4
@@ -82,9 +84,9 @@ func pollSurroundingTracks(backend: AppleScriptBackend = AppleScriptBackend()) -
                     set t to track i of cp
                     if output is not "" then set output to output & linefeed
                     if i = idx then
-                        set output to output & ">" & i & "|" & name of t & "|" & artist of t
+                        set output to output & ">" & i & fs & name of t & fs & artist of t
                     else
-                        set output to output & " " & i & "|" & name of t & "|" & artist of t
+                        set output to output & " " & i & fs & name of t & fs & artist of t
                     end if
                 end repeat
                 return output
@@ -99,7 +101,7 @@ func pollSurroundingTracks(backend: AppleScriptBackend = AppleScriptBackend()) -
     return trimmed.components(separatedBy: "\n").compactMap { line in
         let isCurrent = line.hasPrefix(">")
         let clean = String(line.dropFirst()) // drop > or space
-        let parts = clean.split(separator: "|", maxSplits: 2).map(String.init)
+        let parts = clean.split(separator: asFieldSep, maxSplits: 2).map(String.init)
         guard parts.count >= 3, let idx = Int(parts[0]) else { return nil }
         return TrackListEntry(index: idx, name: parts[1], artist: parts[2], isCurrent: isCurrent)
     }
@@ -128,6 +130,7 @@ func pollAlbumTracks(for np: NowPlayingState, backend: AppleScriptBackend = Appl
                 if (count of matches) = 0 then
                     set matches to (every track of playlist "Library" whose album is "\(album)")
                 end if
+                set fs to (ASCII character 31)
                 set output to ""
                 repeat with t in matches
                     if output is not "" then set output to output & linefeed
@@ -135,7 +138,7 @@ func pollAlbumTracks(for np: NowPlayingState, backend: AppleScriptBackend = Appl
                     try
                         set tn to track number of t
                     end try
-                    set output to output & tn & "|" & name of t & "|" & artist of t
+                    set output to output & tn & fs & name of t & fs & artist of t
                 end repeat
                 return output
             end try
@@ -147,7 +150,7 @@ func pollAlbumTracks(for np: NowPlayingState, backend: AppleScriptBackend = Appl
     guard !trimmed.isEmpty else { return pollSurroundingTracks(backend: backend) }
 
     let sorted: [TrackListEntry] = trimmed.components(separatedBy: "\n").compactMap { line -> TrackListEntry? in
-        let parts = line.split(separator: "|", maxSplits: 2).map(String.init)
+        let parts = line.split(separator: asFieldSep, maxSplits: 2).map(String.init)
         guard parts.count >= 3 else { return nil }
         let idx = Int(parts[0]) ?? 0
         let name = parts[1]
@@ -341,7 +344,7 @@ func renderTimelineRows(
     out += "\(ANSICode.bold)\(ANSICode.cyan)\(header)\(ANSICode.reset)"
     tRow += 1
     out += ANSICode.moveTo(row: tRow, col: x)
-    out += "\(ANSICode.dim)\(String(repeating: "\u{2500}", count: min(8, max(1, header.count))))\(ANSICode.reset)"
+    out += "\(ANSICode.dim)\(String(repeating: "\u{2500}", count: min(18, max(1, header.count + 2))))\(ANSICode.reset)"
     tRow += 2
 
     let rowHeight = max(1, visibleHeight - 3)

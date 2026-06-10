@@ -18,7 +18,7 @@ Use semver in all four locations (keep in sync):
 
 ```
 skills/music/SKILL.md          # conversational skill (complex requests)
-commands/                      # slash commands (13 quick controls)
+commands/                      # slash commands (14 quick controls)
 scripts/statusline.sh          # status line script (now playing)
 .claude-plugin/                # plugin.json and marketplace.json
 tools/music/                   # Swift CLI source

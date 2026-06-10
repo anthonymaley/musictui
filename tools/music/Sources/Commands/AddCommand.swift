@@ -45,9 +45,9 @@ struct Add: ParsableCommand {
         } else if !to.isEmpty {
             let backend = AppleScriptBackend()
             let result = try syncRun {
-                try await backend.runMusic("return name of current track & \"|\" & artist of current track")
+                try await backend.runMusic("return name of current track & (ASCII character 31) & artist of current track")
             }
-            let parts = result.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: "|")
+            let parts = result.trimmingCharacters(in: .whitespacesAndNewlines).split(separator: asFieldSep)
             if parts.count >= 2 {
                 trackTitle = String(parts[0])
                 trackArtist = String(parts[1])

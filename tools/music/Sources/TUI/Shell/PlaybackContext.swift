@@ -24,7 +24,7 @@ func parseContextQueue(_ raw: String) -> ContextQueue {
     let total = Int(lines[2].trimmingCharacters(in: .whitespaces)) ?? 0
     var tracks: [TrackListEntry] = []
     for line in lines.dropFirst(4) where !line.isEmpty {
-        let f = line.split(separator: "|", maxSplits: 2).map(String.init)
+        let f = line.split(separator: asFieldSep, maxSplits: 2).map(String.init)
         guard f.count == 3, let idx = Int(f[0]) else { continue }
         tracks.append(TrackListEntry(
             index: idx, name: f[1], artist: f[2],
@@ -50,12 +50,13 @@ func pollContextQueue(np: NowPlayingState, backend: AppleScriptBackend = AppleSc
                 if startIdx < 1 then set startIdx to 1
                 set endIdx to idx + 40
                 if endIdx > total then set endIdx to total
+                set fs to (ASCII character 31)
                 set output to cpName & linefeed & idx & linefeed & total & linefeed & startIdx
                 if endIdx >= startIdx then
                     set ns to name of tracks startIdx thru endIdx of cp
                     set ars to artist of tracks startIdx thru endIdx of cp
                     repeat with i from 1 to (count of ns)
-                        set output to output & linefeed & (startIdx + i - 1) & "|" & (item i of ns) & "|" & (item i of ars)
+                        set output to output & linefeed & (startIdx + i - 1) & fs & (item i of ns) & fs & (item i of ars)
                     end repeat
                 end if
                 return output

@@ -119,6 +119,15 @@ final class PlaylistsScene: Scene {
 
     // MARK: filter helpers
 
+    /// Move the rail cursor by `delta` positions within the (possibly filtered)
+    /// visible list, clamped to its ends.
+    private func moveRail(by delta: Int) {
+        let vis = visibleIndices()
+        guard !vis.isEmpty else { return }
+        let pos = vis.firstIndex(of: plCursor) ?? 0
+        plCursor = vis[max(0, min(vis.count - 1, pos + delta))]
+    }
+
     private func visibleIndices() -> [Int] {
         guard !filterText.isEmpty else { return Array(0..<meta.count) }
         let q = filterText.lowercased()
@@ -239,6 +248,10 @@ final class PlaylistsScene: Scene {
             switch key {
             case .enter: filtering = false
             case .escape: filtering = false; filterText = ""; clampCursorToFilter()
+            // Arrows navigate the filtered list WHILE typing (fzf-style) —
+            // having to Enter out of filter mode first was pure friction.
+            case .up: moveRail(by: -1)
+            case .down: moveRail(by: 1)
             case .char(let c) where c == "\u{7F}" || c == "\u{8}":
                 if !filterText.isEmpty { filterText.removeLast() }
                 clampCursorToFilter()
@@ -250,16 +263,28 @@ final class PlaylistsScene: Scene {
 
         switch key {
         case .up:
-            if focus == .playlists {
-                let vis = visibleIndices()
-                if let pos = vis.firstIndex(of: plCursor), pos > 0 { plCursor = vis[pos - 1] }
-            } else { trCursor = max(0, trCursor - 1) }
+            if focus == .playlists { moveRail(by: -1) }
+            else { trCursor = max(0, trCursor - 1) }
             return .redraw
         case .down:
-            if focus == .playlists {
-                let vis = visibleIndices()
-                if let pos = vis.firstIndex(of: plCursor), pos < vis.count - 1 { plCursor = vis[pos + 1] }
-            } else { trCursor = min(max(0, trackCount - 1), trCursor + 1) }
+            if focus == .playlists { moveRail(by: 1) }
+            else { trCursor = min(max(0, trackCount - 1), trCursor + 1) }
+            return .redraw
+        case .pageUp:
+            if focus == .playlists { moveRail(by: -10) }
+            else { trCursor = max(0, trCursor - 10) }
+            return .redraw
+        case .pageDown:
+            if focus == .playlists { moveRail(by: 10) }
+            else { trCursor = min(max(0, trackCount - 1), trCursor + 10) }
+            return .redraw
+        case .home:
+            if focus == .playlists, let first = visibleIndices().first { plCursor = first }
+            else { trCursor = 0 }
+            return .redraw
+        case .end:
+            if focus == .playlists, let last = visibleIndices().last { plCursor = last }
+            else { trCursor = max(0, trackCount - 1) }
             return .redraw
         case .char("/"):
             filtering = true
@@ -360,8 +385,13 @@ final class PlaylistsScene: Scene {
             }
             let padName = nm + String(repeating: " ", count: max(0, nameWidth - nm.count))
             if i == plCursor {
-                let mark = (focus == .playlists) ? ANSICode.cyan : ANSICode.dim
-                out += "\(mark)\u{258C}\(ANSICode.reset) \(ANSICode.brightWhite)\(padName)\(ANSICode.reset) \(metaCell)"
+                // One selection language across the shell: inverse-video when
+                // this zone has focus (matches Up Next), dim bar otherwise.
+                if focus == .playlists {
+                    out += "\u{258C} \(ANSICode.inverse)\(padName)\(ANSICode.reset) \(metaCell)"
+                } else {
+                    out += "\(ANSICode.dim)\u{258C}\(ANSICode.reset) \(ANSICode.brightWhite)\(padName)\(ANSICode.reset) \(metaCell)"
+                }
             } else {
                 out += "  \(ANSICode.white)\(padName)\(ANSICode.reset) \(metaCell)"
             }
@@ -441,7 +471,7 @@ final class PlaylistsScene: Scene {
             let idx = String(format: "%02d", i + 1)
             let text = truncText(tracks[i], to: max(2, z.rightWidth - 4))
             if i == trCursor {
-                out += "\(ANSICode.cyan)\u{25B6}\(ANSICode.reset) \(ANSICode.brightWhite)\(idx) \(text)\(ANSICode.reset)"
+                out += "\(ANSICode.inverse)\(idx)  \(text)\(ANSICode.reset)"
             } else {
                 out += "\(ANSICode.dim)\(idx)\(ANSICode.reset)  \(text)"
             }

@@ -35,8 +35,11 @@ music back                                    # previous track
 music stop
 music now                                     # what's playing + speakers
 music now --json                              # structured: track, artist, album, speakers, state
-music shuffle on|off
+music seek +30|-30|90|1:30                    # seek within the current track
+music shuffle                                 # toggle (or: music shuffle on|off)
 music repeat off|one|all
+music love                                    # favorite the current track
+music unlove                                  # unfavorite
 ```
 
 ## Speakers (no auth)
@@ -117,7 +120,9 @@ music playlist cleanup                        # delete all __temp__ playlists
 
 ```bash
 music similar                                 # similar to now playing
-music similar "Song" "Artist"                 # similar to specific track
+music similar Hotel California                # similar to a specific track (--artist to narrow)
+music recent                                  # recently played tracks (cached for `play N`)
+music rotation                                # your heavy-rotation music
 music suggest                                 # suggest tracks from now playing
 music suggest 10 --from "Working Vibes"       # suggest from playlist vibe
 music new-releases --like-current             # new releases from current artist
@@ -135,7 +140,7 @@ Bare `music` is the main interactive surface — a tabbed shell with **Now**, **
 
 TUI behavior: the Now tab shows the current album context; selecting a playlist on the Playlists tab pins it on the Now tab. Cursor movement is local and fast.
 
-TUI controls: `1/2/3` switch tabs (Now / Playlists / Speakers), `Tab` cycles tabs, `↑↓` navigate, `Enter` play/open selected, `←→` seek (Now) or volume (Speakers), `Space` pause, `</>` previous/next track (full up/down through the playlist), `z`/`r` shuffle, `+/-` volume, `n` next-up options (Now), `/` filter playlists, `Esc` back, `q` quit. Playlist track-play requires Music's Autoplay (∞) turned OFF — it drives playback track-by-track and needs each track to stop at its end.
+TUI controls: `1/2/3` switch tabs (Now / Playlists / Speakers), `Tab`/`Shift-Tab` cycle tabs, `↑↓` navigate (`PgUp/PgDn/Home/End` for long lists), `Enter` play/open selected, `←→` seek (Now) or volume (Speakers), `Space` pause, `</>` previous/next track (full up/down through the playlist), `z`/`r` shuffle, `l` favorite, `+/-` volume, `n` next-up options (Now), `/` filter playlists (arrows navigate while typing), `Esc` back, `q` quit. Playlist track-play requires Music's Autoplay (∞) turned OFF — it drives playback track-by-track and needs each track to stop at its end.
 
 ## Result Cache
 

@@ -7,7 +7,7 @@
 # Setup: Add to ~/.claude/settings.json (the version segment changes on update):
 #   "statusLine": {
 #     "type": "command",
-#     "command": "~/.claude/plugins/cache/apple-music-marketplace/music/1.7.0/scripts/statusline.sh"
+#     "command": "~/.claude/plugins/cache/apple-music-marketplace/music/<version>/scripts/statusline.sh"
 #   }
 
 cat > /dev/null  # consume stdin (Claude Code session JSON)
@@ -16,13 +16,22 @@ MUSIC_CLI="${MUSIC_CLI:-music}"
 
 if command -v "$MUSIC_CLI" &>/dev/null; then
     JSON=$($MUSIC_CLI now --json 2>/dev/null) || exit 0
-    STATE=$(echo "$JSON" | grep -o '"state":"[^"]*"' | cut -d'"' -f4)
-    [ "$STATE" = "stopped" ] && exit 0
-
-    TRACK=$(echo "$JSON" | grep -o '"track":"[^"]*"' | cut -d'"' -f4)
-    ARTIST=$(echo "$JSON" | grep -o '"artist":"[^"]*"' | cut -d'"' -f4)
-    SPEAKERS=$(echo "$JSON" | grep -o '"speakers":\[[^]]*\]' | grep -o '"name":"[^"]*"' | cut -d'"' -f4 | paste -sd', ' -)
-    VOLUMES=$(echo "$JSON" | grep -o '"speakers":\[[^]]*\]' | grep -o '"volume":[0-9]*' | cut -d: -f2 | paste -sd', ' -)
+    if command -v jq &>/dev/null; then
+        # jq survives escaped quotes in track titles; the grep fallback truncates there.
+        STATE=$(echo "$JSON" | jq -r '.state // empty')
+        [ "$STATE" = "stopped" ] && exit 0
+        TRACK=$(echo "$JSON" | jq -r '.track // empty')
+        ARTIST=$(echo "$JSON" | jq -r '.artist // empty')
+        SPEAKERS=$(echo "$JSON" | jq -r '[.speakers[]?.name] | join(", ")')
+        VOLUMES=$(echo "$JSON" | jq -r '[.speakers[]?.volume] | map(tostring) | join(", ")')
+    else
+        STATE=$(echo "$JSON" | grep -o '"state":"[^"]*"' | cut -d'"' -f4)
+        [ "$STATE" = "stopped" ] && exit 0
+        TRACK=$(echo "$JSON" | grep -o '"track":"[^"]*"' | cut -d'"' -f4)
+        ARTIST=$(echo "$JSON" | grep -o '"artist":"[^"]*"' | cut -d'"' -f4)
+        SPEAKERS=$(echo "$JSON" | grep -o '"speakers":\[[^]]*\]' | grep -o '"name":"[^"]*"' | cut -d'"' -f4 | paste -sd', ' -)
+        VOLUMES=$(echo "$JSON" | grep -o '"speakers":\[[^]]*\]' | grep -o '"volume":[0-9]*' | cut -d: -f2 | paste -sd', ' -)
+    fi
 
     [ "$STATE" = "playing" ] && ICON="▶" || ICON="⏸"
 

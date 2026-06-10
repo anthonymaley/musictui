@@ -72,13 +72,14 @@ func fetchPlaylistTracks(backend: AppleScriptBackend, playlist: String) -> [Trac
     let esc = escapeAppleScriptString(playlist)
     guard let raw = try? syncRun({
         try await backend.runMusic("""
+            set fs to (ASCII character 31)
             set total to count of tracks of playlist "\(esc)"
             set output to ""
             if total > 0 then
                 set ns to name of tracks 1 thru total of playlist "\(esc)"
                 set ars to artist of tracks 1 thru total of playlist "\(esc)"
                 repeat with i from 1 to total
-                    set output to output & i & "|" & (item i of ns) & "|" & (item i of ars)
+                    set output to output & i & fs & (item i of ns) & fs & (item i of ars)
                     if i < total then set output to output & linefeed
                 end repeat
             end if
@@ -87,7 +88,7 @@ func fetchPlaylistTracks(backend: AppleScriptBackend, playlist: String) -> [Trac
     }) else { return [] }
     var out: [TrackListEntry] = []
     for line in raw.components(separatedBy: "\n") where !line.isEmpty {
-        let f = line.split(separator: "|", maxSplits: 2).map(String.init)
+        let f = line.split(separator: asFieldSep, maxSplits: 2).map(String.init)
         guard f.count == 3, let idx = Int(f[0]) else { continue }
         out.append(TrackListEntry(index: idx, name: f[1], artist: f[2], isCurrent: false))
     }

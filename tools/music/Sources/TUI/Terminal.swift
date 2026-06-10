@@ -32,6 +32,8 @@ struct ANSICode {
 
 enum KeyPress {
     case up, down, left, right
+    case pageUp, pageDown, home, end
+    case shiftTab
     case f7, f9
     case enter, space, escape
     case char(Character)
@@ -57,6 +59,9 @@ enum KeyPress {
                 case 0x42: return .down
                 case 0x43: return .right
                 case 0x44: return .left
+                case 0x48: return .home      // ESC [ H
+                case 0x46: return .end       // ESC [ F
+                case 0x5A: return .shiftTab  // ESC [ Z
                 case 0x31...0x39:
                     var sequence = String(UnicodeScalar(seq2))
                     var bytesRead = 0
@@ -68,10 +73,23 @@ enum KeyPress {
                         }
                     }
                     switch sequence {
+                    case "5~": return .pageUp
+                    case "6~": return .pageDown
+                    case "1~", "7~": return .home
+                    case "4~", "8~": return .end
                     case "18~": return .f7
                     case "20~": return .f9
                     default: return nil
                     }
+                default: return nil
+                }
+            }
+            if seq1 == 0x4F {
+                // Application-mode Home/End (ESC O H / ESC O F).
+                guard let seq2 = readByte() else { return .escape }
+                switch seq2 {
+                case 0x48: return .home
+                case 0x46: return .end
                 default: return nil
                 }
             }
