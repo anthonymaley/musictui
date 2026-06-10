@@ -21,7 +21,7 @@ apple-music/
 ├── tools/music/               # Swift CLI binary
 │   ├── Package.swift          # SPM manifest (swift-argument-parser)
 │   └── Sources/
-│       ├── Music.swift        # @main entry, 20 subcommands
+│       ├── Music.swift        # @main entry, 24 subcommands
 │       ├── Backends/
 │       │   ├── AppleScriptBackend.swift  # osascript wrapper
 │       │   └── RESTAPIBackend.swift      # Apple Music API (URLSession)

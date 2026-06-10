@@ -35,7 +35,7 @@ There are five interaction layers, from quickest to most flexible:
 
 ### 1. Slash Commands (`/music:*`)
 
-Fast, instant, no AI reasoning. Type `/music:` and tab to discover all 13 commands.
+Fast, instant, no AI reasoning. Type `/music:` and tab to discover all 14 commands.
 
 Every slash command has `disable-model-invocation: true` — they execute immediately as shell scripts, with zero token cost. The output appears directly in the chat.
 
@@ -53,6 +53,9 @@ Every slash command has `disable-model-invocation: true` — they execute immedi
 /music:stop kitchen              Remove kitchen from the speaker group
 /music:now                       What's currently playing
 /music:shuffle                   Toggle shuffle on/off
+/music:repeat                    Set repeat mode (off/one/all)
+music seek +30                   Seek within the current track (CLI)
+music love                       Favorite the current track (CLI; music unlove reverses)
 ```
 
 **Speakers**
@@ -113,12 +116,13 @@ music                           Unified shell: Now / Playlists / Speakers tabs
 
 Current TUI contract:
 
-- The Playlists tab does not fetch tracks on every playlist highlight; it loads tracks on selection.
+- The Playlists tab does not fetch tracks on every playlist highlight; it loads tracks on selection. `/` filters the playlist rail as you type (arrows still navigate while filtering).
 - Selecting a playlist pins it on the Now tab, which shows the full playlist and keeps `↑↓` navigation local.
 - The Now tab shows the current album context, not a real Apple Music queue.
 - `Enter` plays the highlighted row.
-- `z` toggles shuffle in the pinned-playlist Now tab.
+- Keys: `1/2/3` jump to a tab, `Tab`/`Shift-Tab` cycle, `↑↓` + `PgUp/PgDn/Home/End` navigate, `Space` play/pause, `</>` previous/next, `←→` seek (Now) or per-speaker volume (Speakers), `z`/`r` shuffle, `l` favorite, `+/-` master volume, `n` next-up options, `Esc` back, `q` quit.
 - Speaker wake is explicit via `music speaker wake`; normal playback does not auto-reset AirPlay outputs.
+- Music's Autoplay (∞) must stay OFF — playlist track-selection drives playback track-by-track and relies on each track stopping at its end.
 
 ### 3. Natural Language (Skill)
 
@@ -154,7 +158,7 @@ Enable in `~/.claude/settings.json`:
 {
   "statusLine": {
     "type": "command",
-    "command": "~/.claude/plugins/cache/apple-music-marketplace/music/1.7.0/scripts/statusline.sh"
+    "command": "~/.claude/plugins/cache/apple-music-marketplace/music/1.16.1/scripts/statusline.sh"
   }
 }
 ```
@@ -178,14 +182,14 @@ music playlist list --json
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐   │
 │  │ Slash Commands│  │   Skill      │  │   Status Line    │   │
 │  │ /music:*     │  │   (music)     │  │   statusline.sh  │   │
-│  │ 13 commands  │  │   natural    │  │   now playing    │   │
+│  │ 14 commands  │  │   natural    │  │   now playing    │   │
 │  │ instant exec │  │   language   │  │   zero tokens    │   │
 │  └──────┬───────┘  └──────┬───────┘  └────────┬─────────┘   │
 │         │                 │                    │              │
 │         ▼                 ▼                    ▼              │
 │  ┌─────────────────────────────────────────────────────┐     │
 │  │                    music CLI                          │     │
-│  │           Swift binary, 20 subcommands              │     │
+│  │           Swift binary, 24 subcommands              │     │
 │  │                                                     │     │
 │  │  ┌─────────────────┐  ┌──────────────────────┐      │     │
 │  │  │  AppleScript    │  │  REST API             │      │     │
@@ -193,9 +197,10 @@ music playlist list --json
 │  │  │                 │  │                        │      │     │
 │  │  │  • playback     │  │  • catalog search     │      │     │
 │  │  │  • speakers     │  │  • add to library     │      │     │
-│  │  │  • volume       │  │  • playlist CRUD      │      │     │
+│  │  │  • volume       │  │  • playlist writes    │      │     │
 │  │  │  • now playing  │  │  • discovery          │      │     │
-│  │  │  • shuffle      │  │  • recommendations    │      │     │
+│  │  │  • seek, love   │  │  • recommendations    │      │     │
+│  │  │  • shuffle      │  │  • recent / rotation  │      │     │
 │  │  │  • repeat       │  │                        │      │     │
 │  │  │                 │  │  Auth: JWT (ES256)     │      │     │
 │  │  │  Auth: none     │  │  + user token          │      │     │
@@ -257,9 +262,9 @@ Every few seconds, Claude Code runs statusline.sh:
 ```
 apple-music/
 ├── .claude-plugin/
-│   ├── plugin.json              # Plugin metadata (name: "music", v1.7.0)
+│   ├── plugin.json              # Plugin metadata (name: "music")
 │   └── marketplace.json         # Marketplace listing
-├── commands/                    # 13 slash commands
+├── commands/                    # 14 slash commands
 │   ├── play.md                  # /music:play [query] [speaker] [vol%]
 │   ├── pause.md                 # /music:pause
 │   ├── skip.md                  # /music:skip
@@ -267,6 +272,7 @@ apple-music/
 │   ├── stop.md                  # /music:stop [speaker]
 │   ├── now.md                    # /music:now
 │   ├── shuffle.md               # /music:shuffle
+│   ├── repeat.md                # /music:repeat [off|one|all]
 │   ├── volume.md                   # /music:volume <level> | <speaker> <level>
 │   ├── speaker.md               # /music:speaker <action> [name]
 │   ├── search.md                # /music:search <query>
@@ -281,16 +287,21 @@ apple-music/
 ├── tools/music/                  # Swift CLI source
 │   ├── Package.swift            # SPM manifest
 │   └── Sources/
-│       ├── Music.swift           # @main, all subcommands registered
+│       ├── Music.swift           # @main, all 24 subcommands registered
+│       ├── StatusReporter.swift  # --verbose diagnostics on stderr
 │       ├── Backends/
-│       │   ├── AppleScriptBackend.swift
+│       │   ├── AppleScriptBackend.swift   # osascript wrapper + watchdog timeout
+│       │   ├── AppleScriptEscaping.swift  # one escaping helper
+│       │   ├── LibraryLookup.swift        # one library-track lookup script
 │       │   └── RESTAPIBackend.swift
 │       ├── Auth/
 │       │   ├── AuthManager.swift
 │       │   ├── JWTGenerator.swift
 │       │   └── AuthPage.swift
 │       ├── Commands/
-│       │   ├── PlaybackCommands.swift
+│       │   ├── PlaybackCommands.swift     # play/pause/skip/back/stop/now/seek/shuffle/repeat
+│       │   ├── LoveCommands.swift         # love/unlove
+│       │   ├── HistoryCommands.swift      # recent/rotation
 │       │   ├── SpeakerCommands.swift
 │       │   ├── VolumeCommands.swift
 │       │   ├── AuthCommands.swift
@@ -302,15 +313,23 @@ apple-music/
 │       │   └── MixCommand.swift
 │       ├── Models/
 │       │   ├── OutputFormat.swift
-│       │   ├── ResultCache.swift
-│       │   └── LibrarySync.swift
+│       │   └── ResultCache.swift
 │       └── TUI/
 │           ├── Terminal.swift
 │           ├── MultiSelectList.swift
 │           ├── ListPicker.swift
 │           ├── VolumeMixer.swift
 │           ├── NowPlayingTUI.swift
-│           └── TUILayout.swift
+│           ├── PlaylistBrowserModel.swift
+│           ├── PlaylistDataSources.swift
+│           ├── TUILayout.swift
+│           └── Shell/               # unified tabbed shell (bare `music`)
+│               ├── Shell.swift, Router.swift, Scene.swift
+│               ├── GlobalKeymap.swift, ShellActions.swift
+│               ├── NowPlayingScene.swift, PlaylistsScene.swift, SpeakersScene.swift
+│               ├── NowPlayingStore.swift, PlaybackPoller.swift, PlaybackContext.swift
+│               ├── AppQueue.swift       # app-owned playlist queue
+│               └── ShellChrome.swift, ShellFrame.swift
 ├── docs/
 │   ├── guide.md                 # This document
 │   └── playbook.md              # How to rebuild from scratch
@@ -371,7 +390,8 @@ music auth status
 
 ## Version
 
-v1.7.0 — all three locations stay in sync:
+v1.16.1 — all four locations stay in sync:
 - `.claude-plugin/plugin.json` → `version`
 - `.claude-plugin/marketplace.json` → `metadata.version`
 - `.claude-plugin/marketplace.json` → `plugins[0].version`
+- `tools/music/Sources/Music.swift` → `CommandConfiguration(version:)` (rebuild via `scripts/install.sh` so `music --version` matches)

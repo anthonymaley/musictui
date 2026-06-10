@@ -128,6 +128,9 @@ Instant execution. No AI reasoning, no token cost. Type `/music:` and tab to dis
 | `/music:stop kitchen` | Remove kitchen from speaker group |
 | `/music:now` | What's playing (track, album, speakers) |
 | `/music:shuffle` | Toggle shuffle on/off |
+| `/music:repeat` | Set repeat mode (off/one/all) |
+| `music seek +30` / `music seek 1:30` | Seek within the current track (relative or absolute) |
+| `music love` / `music unlove` | Favorite / unfavorite the current track |
 
 ### Speakers & Volume
 
@@ -203,6 +206,8 @@ Instant execution. No AI reasoning, no token cost. Type `/music:` and tab to dis
 | `music suggest 10 --from "Working Vibes"` | Suggest tracks from playlist vibe |
 | `music new-releases --like-current` | New releases from current artist |
 | `music mix --artists "Fouk,Floating Points" --name "Friday Mix"` | Mixed playlist |
+| `music recent` | Recently played tracks (numbered, so `music play 3` works) |
+| `music rotation` | Your heavy-rotation music |
 
 ### Routed Playback
 
@@ -279,29 +284,39 @@ Run bare `music` in a real terminal (not inside Claude Code — TUI requires a T
 
 > **Turn off Music's Autoplay (∞).** Playlist track-selection and up/down navigation drive playback track-by-track and rely on a track *stopping* at its end. With Autoplay on, Music bleeds into the library between tracks. Disable it once in Music's Up Next panel (the ∞ button).
 
+**Global keys** (work on every tab):
+
 | Key | Action |
 |-----|--------|
-| `↑`/`↓` | Navigate the right pane (instant, no poll) |
-| `Enter` | Play selected track |
-| `←`/`→` | Seek ±30s |
+| `1`/`2`/`3` | Jump to Now / Playlists / Speakers tab |
+| `Tab` / `Shift-Tab` | Cycle tabs forward / backward |
 | `Space` | Play/pause |
-| `z` / `r` | Shuffle the current playlist queue |
 | `<` / `>` | Previous / next track (full up/down through the playlist) |
+| `z` / `r` | Shuffle |
 | `+`/`-` | Master volume ±5 |
-| `s` | AirPlay speaker picker |
-| `v` | Per-speaker volume mixer |
-| `b`/`Esc` | Back (playlist mode) / Quit |
 | `q` | Quit |
 
-Two markers in the right pane: green `▶` = currently playing, cyan `▸` = cursor position.
+**Now tab:**
+
+| Key | Action |
+|-----|--------|
+| `↑`/`↓` | Navigate the track pane (instant, no poll) |
+| `PgUp`/`PgDn`/`Home`/`End` | Page and jump in long lists |
+| `Enter` | Play selected track |
+| `←`/`→` | Seek ±30s |
+| `l` | Favorite the current track |
+| `n` | Next-up options (shuffle / playlist / quiet) |
+| `Esc` | Back / dismiss menu |
+
+Two markers in the track pane: green `▶` = currently playing, inverse video = cursor position.
 
 ![Now Playing](media/nowplaying.png)
 
-**Playlists tab** — left: playlists (instant highlight on `↑↓`, no fetch). Right: tracks (loaded on `Enter` or `Tab`). `p` plays playlist, `s` shuffles, `b` goes back.
+**Playlists tab** — left: playlists (instant highlight on `↑↓`, no fetch; `/` filters as you type, arrows still navigate). Right: tracks (loaded on `Enter`, which also pins the playlist on the Now tab). `p` plays playlist, `s` shuffles, `b`/`Esc` goes back.
 
 ![Playlist Browser](media/playlist.jpg)
 
-**Speakers tab** — toggle AirPlay outputs on/off, adjust per-speaker volume with `←→`. Active speakers show volume bars. (The `music speaker` slash command and CLI still drive speakers non-interactively.)
+**Speakers tab** — `↑↓` select, `Enter` toggles AirPlay outputs on/off, `←→` adjusts per-speaker volume. Active speakers show volume bars. (The `music speaker` slash command and CLI still drive speakers non-interactively.)
 
 ![Speaker Picker](media/speakers.png)
 
@@ -324,23 +339,24 @@ Add to `~/.claude/settings.json` (adjust the path to your plugin cache location)
 {
   "statusLine": {
     "type": "command",
-    "command": "~/.claude/plugins/cache/apple-music-marketplace/music/1.7.0/scripts/statusline.sh"
+    "command": "~/.claude/plugins/cache/apple-music-marketplace/music/1.16.1/scripts/statusline.sh"
   }
 }
 ```
 
-> The `1.7.0` segment is the installed plugin version — it changes every time the plugin updates. After `claude plugin update`, update this path to match (`ls ~/.claude/plugins/cache/apple-music-marketplace/music/` shows the current version).
+> The `1.16.1` segment is the installed plugin version — it changes every time the plugin updates. After `claude plugin update`, update this path to match (`ls ~/.claude/plugins/cache/apple-music-marketplace/music/` shows the current version).
 
 ## What Needs Auth?
 
 | Feature | No auth | Developer token | + User token |
 |---------|---------|----------------|-------------|
-| Play, pause, skip, stop, shuffle, repeat | Yes | Yes | Yes |
-| Speakers, volume, now playing | Yes | Yes | Yes |
+| Play, pause, skip, stop, seek, shuffle, repeat | Yes | Yes | Yes |
+| Speakers, volume, now playing, love/unlove | Yes | Yes | Yes |
 | Catalog search | — | Yes | Yes |
 | Add to library | — | — | Yes |
 | Playlist CRUD via API | — | — | Yes |
 | Similar, suggestions, new releases, mix | — | — | Yes |
+| Recently played, heavy rotation | — | — | Yes |
 
 ## How It Works
 
