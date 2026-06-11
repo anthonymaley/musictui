@@ -35,7 +35,7 @@ There are five interaction layers, from quickest to most flexible:
 
 ### 1. Slash Commands (`/music:*`)
 
-Fast, instant, no AI reasoning. Type `/music:` and tab to discover all 14 commands.
+Fast, instant, no AI reasoning. Type `/music:` and tab to discover all 10 commands. Slash commands cover transport: playback, speakers, volume — the things you reach for mid-session. Composition (search, library, playlists, discovery) lives in the skill, the TUI, and the CLI.
 
 Every slash command has `disable-model-invocation: true` — they execute immediately as shell scripts, with zero token cost. The output appears directly in the chat.
 
@@ -82,29 +82,7 @@ music love                       Favorite the current track (CLI; music unlove r
 /music:volume kitchen 80            Set a specific speaker to 80
 ```
 
-**Catalog & Library** (requires music CLI + auth)
-
-```
-/music:search Bohemian Rhapsody  Search Apple Music catalog
-/music:search Fouk               Search by artist
-/music:add Get It Done Fouk      Add a track to your library
-/music:add 3                     Add result #3 from last search
-/music:similar                   Interactive browser for similar tracks (TUI)
-music add --to "House"           Add current song to a playlist
-music remove                     Remove current song from current playlist
-```
-
-**Playlists** (requires music CLI + auth)
-
-```
-/music:playlist                  Interactive browser (TUI) — list/shuffle/play
-/music:playlist list             List all your playlists
-/music:playlist tracks Working Vibes    Show tracks in a playlist
-/music:playlist create Friday Mix       Create an empty playlist
-/music:playlist create Friday Mix 1 3 5  Create from search results
-/music:playlist add "House" 1 3 5        Add search results to playlist
-/music:playlist delete Old Playlist     Delete a playlist
-```
+Catalog search, library adds, similar tracks, and playlist management are deliberately **not** slash commands — they're composition, handled by the skill (natural language), the TUI (Playlists tab), and the CLI directly (`music search`, `music add`, `music similar`, `music playlist`).
 
 ### 2. Interactive TUI
 
@@ -159,7 +137,7 @@ Enable in `~/.claude/settings.json`:
 {
   "statusLine": {
     "type": "command",
-    "command": "~/.claude/plugins/cache/apple-music-marketplace/music/1.16.1/scripts/statusline.sh"
+    "command": "~/.claude/plugins/cache/apple-music-marketplace/music/2.0.0/scripts/statusline.sh"
   }
 }
 ```
@@ -171,6 +149,8 @@ For power users who want to use music outside Claude Code — in scripts, shell 
 ```bash
 music now --json
 music search "Fouk" --limit 20 --json
+music add --to "House"             # add current song to a playlist
+music remove                       # remove current song from current playlist
 music playlist list --json
 ```
 
@@ -183,7 +163,7 @@ music playlist list --json
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐   │
 │  │ Slash Commands│  │   Skill      │  │   Status Line    │   │
 │  │ /music:*     │  │   (music)     │  │   statusline.sh  │   │
-│  │ 14 commands  │  │   natural    │  │   now playing    │   │
+│  │ 10 commands  │  │   natural    │  │   now playing    │   │
 │  │ instant exec │  │   language   │  │   zero tokens    │   │
 │  └──────┬───────┘  └──────┬───────┘  └────────┬─────────┘   │
 │         │                 │                    │              │
@@ -265,7 +245,7 @@ apple-music/
 ├── .claude-plugin/
 │   ├── plugin.json              # Plugin metadata (name: "music")
 │   └── marketplace.json         # Marketplace listing
-├── commands/                    # 14 slash commands
+├── commands/                    # 10 slash commands (transport: playback, speakers, volume)
 │   ├── play.md                  # /music:play [query] [speaker] [vol%]
 │   ├── pause.md                 # /music:pause
 │   ├── skip.md                  # /music:skip
@@ -275,11 +255,7 @@ apple-music/
 │   ├── shuffle.md               # /music:shuffle
 │   ├── repeat.md                # /music:repeat [off|one|all]
 │   ├── volume.md                   # /music:volume <level> | <speaker> <level>
-│   ├── speaker.md               # /music:speaker <action> [name]
-│   ├── search.md                # /music:search <query>
-│   ├── add.md                   # /music:add <title> <artist>
-│   ├── similar.md               # /music:similar
-│   └── playlist.md              # /music:playlist <action> [args]
+│   └── speaker.md               # /music:speaker <action> [name]
 ├── skills/music/
 │   └── SKILL.md                 # Conversational skill (music CLI reference)
 ├── scripts/
@@ -391,7 +367,7 @@ music auth status
 
 ## Version
 
-v1.16.1 — all four locations stay in sync:
+v2.0.0 — all four locations stay in sync:
 - `.claude-plugin/plugin.json` → `version`
 - `.claude-plugin/marketplace.json` → `metadata.version`
 - `.claude-plugin/marketplace.json` → `plugins[0].version`

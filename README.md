@@ -149,21 +149,7 @@ Instant execution. No AI reasoning, no token cost. Type `/music:` and tab to dis
 | `/music:volume up` / `down` | Volume ±10 |
 | `/music:volume kitchen 80` | Set a specific speaker to 80 |
 
-### Playlists
-
-| Command | What it does |
-|---------|-------------|
-| `/music:playlist list` | List all playlists |
-| `/music:playlist tracks Working Vibes` | Show tracks in a playlist |
-
-### Catalog & Discovery (requires auth)
-
-| Command | What it does |
-|---------|-------------|
-| `/music:search Bohemian Rhapsody` | Search Apple Music catalog (100M+ tracks) |
-| `/music:add Get It Done Fouk` | Add a track to your library |
-| `/music:add 3` | Add result #3 from last search |
-| `/music:similar` | Similar tracks with play/add/create actions |
+Slash commands are deliberately transport-only: playback, speakers, volume — instant controls you reach for mid-session. Catalog search, library adds, similar tracks, and playlist management are composition: ask in natural language (the skill composes the CLI calls), use the TUI's Playlists tab, or call the CLI directly (`music search`, `music add`, `music similar`, `music playlist`).
 
 ## CLI Commands
 
@@ -339,12 +325,12 @@ Add to `~/.claude/settings.json` (adjust the path to your plugin cache location)
 {
   "statusLine": {
     "type": "command",
-    "command": "~/.claude/plugins/cache/apple-music-marketplace/music/1.16.1/scripts/statusline.sh"
+    "command": "~/.claude/plugins/cache/apple-music-marketplace/music/2.0.0/scripts/statusline.sh"
   }
 }
 ```
 
-> The `1.16.1` segment is the installed plugin version — it changes every time the plugin updates. After `claude plugin update`, update this path to match (`ls ~/.claude/plugins/cache/apple-music-marketplace/music/` shows the current version).
+> The `2.0.0` segment is the installed plugin version — it changes every time the plugin updates. After `claude plugin update`, update this path to match (`ls ~/.claude/plugins/cache/apple-music-marketplace/music/` shows the current version).
 
 ## What Needs Auth?
 
