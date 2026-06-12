@@ -308,7 +308,7 @@ music auth status
 
 ## Version
 
-v3.0.0 — all four locations stay in sync:
+v3.1.0 — all four locations stay in sync:
 - `.claude-plugin/plugin.json` → `version`
 - `.claude-plugin/marketplace.json` → `metadata.version`
 - `.claude-plugin/marketplace.json` → `plugins[0].version`
