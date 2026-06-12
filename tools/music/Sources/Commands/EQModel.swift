@@ -1,5 +1,5 @@
 // MARK: - EQ domain logic (pure, unit-testable)
-// Venue preset curves, sparkline rendering.
+// Venue preset curves, name resolution, sparkline rendering.
 // No AppleScript here — everything is tested in EQModelTests.
 
 import Foundation
@@ -35,4 +35,26 @@ func eqSparkline(_ bands: [Double]) -> String {
         let t = (min(12, max(-12, gain)) + 12) / 24          // 0…1
         return glyphs[Int((t * 7).rounded())]
     }.joined()
+}
+
+enum EQNameResolver {
+    enum Resolution: Equatable {
+        case match(String)
+        case ambiguous([String])
+        case none
+    }
+
+    /// Exact > prefix > contains, all case-insensitive. `available` order is
+    /// precedence order — callers pass venue-pack names before Music's own.
+    static func resolve(_ query: String, in available: [String]) -> Resolution {
+        let q = query.lowercased()
+        if let exact = available.first(where: { $0.lowercased() == q }) { return .match(exact) }
+        let prefix = available.filter { $0.lowercased().hasPrefix(q) }
+        if prefix.count == 1 { return .match(prefix[0]) }
+        if prefix.count > 1 { return .ambiguous(prefix) }
+        let contains = available.filter { $0.lowercased().contains(q) }
+        if contains.count == 1 { return .match(contains[0]) }
+        if contains.count > 1 { return .ambiguous(contains) }
+        return .none
+    }
 }

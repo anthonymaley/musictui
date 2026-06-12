@@ -24,4 +24,24 @@ final class EQModelTests: XCTestCase {
         // 0 dB maps to the middle of the 8-glyph ramp (index 4 of 0...7).
         XCTAssertEqual(eqSparkline([0]), "▅")
     }
+
+    private let presets = VenuePack.names + ["Acoustic", "Bass Booster", "Hip-Hop", "Manual"]
+
+    func testResolverExactCaseInsensitive() {
+        XCTAssertEqual(EQNameResolver.resolve("dungeon", in: presets), .match("Dungeon"))
+        XCTAssertEqual(EQNameResolver.resolve("bass booster", in: presets), .match("Bass Booster"))
+    }
+
+    func testResolverPrefix() {
+        XCTAssertEqual(EQNameResolver.resolve("night", in: presets), .match("Nightclub"))
+    }
+
+    func testResolverContainsAmbiguous() {
+        XCTAssertEqual(EQNameResolver.resolve("club", in: presets),
+                       .ambiguous(["Nightclub", "Jazz Club"]))
+    }
+
+    func testResolverNone() {
+        XCTAssertEqual(EQNameResolver.resolve("xyzzy", in: presets), .none)
+    }
 }
