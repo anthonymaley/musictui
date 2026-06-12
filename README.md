@@ -1,4 +1,4 @@
-# Apple Music TUI and Claude Code SKill 
+# Apple Music TUI and Claude Code Skill
 
 ```
      ___              __        __  ___         _
