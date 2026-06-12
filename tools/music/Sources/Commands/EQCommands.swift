@@ -9,6 +9,13 @@ struct EQ: ParsableCommand {
     var args: [String] = []
     @Flag(name: .long, help: "Output JSON") var json = false
 
+    /// Preset names come from Music.app verbatim and may contain quotes or
+    /// backslashes — escape them before interpolating into JSON output.
+    private func jsonEscaped(_ s: String) -> String {
+        s.replacingOccurrences(of: "\\", with: "\\\\")
+         .replacingOccurrences(of: "\"", with: "\\\"")
+    }
+
     func run() throws {
         let backend = AppleScriptBackend()
         let word = args.joined(separator: " ").lowercased()
@@ -28,7 +35,7 @@ struct EQ: ParsableCommand {
                 if try eqDeletePreset(backend, name: name) { removed.append(name) }
             }
             if json {
-                let names = removed.map { "\"\($0)\"" }.joined(separator: ",")
+                let names = removed.map { "\"\(jsonEscaped($0))\"" }.joined(separator: ",")
                 print("{\"ok\":true,\"removed\":[\(names)]}")
             } else {
                 print(removed.isEmpty ? "No venue presets installed."
@@ -43,7 +50,7 @@ struct EQ: ParsableCommand {
         let snap = try fetchEQSnapshot(backend)
         let bands = snap.current.flatMap { try? fetchEQBands(backend, name: $0) }
         if json {
-            let cur = snap.current.map { "\"\($0)\"" } ?? "null"
+            let cur = snap.current.map { "\"\(jsonEscaped($0))\"" } ?? "null"
             print("{\"enabled\":\(snap.enabled),\"preset\":\(cur)}")
         } else {
             let state = snap.enabled ? "on" : "off"
@@ -57,7 +64,7 @@ struct EQ: ParsableCommand {
         let snap = try fetchEQSnapshot(backend)
         let installed = Set(snap.presets)
         if json {
-            let names = snap.presets.map { "\"\($0)\"" }.joined(separator: ",")
+            let names = snap.presets.map { "\"\(jsonEscaped($0))\"" }.joined(separator: ",")
             print("{\"presets\":[\(names)]}")
             return
         }
@@ -86,7 +93,7 @@ struct EQ: ParsableCommand {
             try eqSetCurrent(backend, name: name)
             try eqSetEnabled(backend, true)
             let bands = (try? fetchEQBands(backend, name: name)) ?? []
-            print(json ? "{\"ok\":true,\"preset\":\"\(name)\"}"
+            print(json ? "{\"ok\":true,\"preset\":\"\(jsonEscaped(name))\"}"
                        : "EQ on — \(name)  \(eqSparkline(bands))")
         case .ambiguous(let names):
             throw ValidationError("Did you mean: \(names.joined(separator: ", "))?")
