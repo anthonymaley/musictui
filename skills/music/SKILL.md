@@ -1,6 +1,6 @@
 ---
 name: music
-description: "Apple Music in your terminal. Play tracks, route to AirPlay speakers and AirPods, search 100 million songs, build playlists, discover new music, favorite tracks, seek within a song, browse your listening history. This is the plugin's only entry point — there are no separate slash commands, so EVERY music request comes here: transport, playback routing, search, library, playlists, discovery. Trigger on anything music-related: playing a song, pausing, skipping, switching speakers, adjusting volume, seeking within a track, searching the catalog, adding tracks to the library, building or managing playlists, finding similar music, checking what's playing, favoriting a song, recalling recently played music. Covers casual requests too: 'put on some house music', 'pause the music', 'next track', 'find me something like this', 'switch to my AirPods', 'add the bedroom to the group', 'turn down the kitchen', 'search for Gypsy Woman', 'add that track to my library', 'make a playlist from those results', 'add this to my workout playlist', 'play Kid A in the kitchen and living room at 60%', 'love this track', 'skip ahead 30 seconds', 'what was that song I played earlier'. Handles Apple Music, AirPlay, HomePod, AirPods, Bluetooth audio, albums, artists, playlists, recommendations, new releases, listening history, heavy rotation, and any audio routing on macOS."
+description: "Apple Music in your terminal. Play tracks, route to AirPlay speakers and AirPods, search 100 million songs, build playlists, discover new music, favorite tracks, seek within a song, browse your listening history. This is the plugin's only entry point — there are no separate slash commands, so EVERY music request comes here: transport, playback routing, search, library, playlists, discovery, eq, equalizer, bass, treble, 'sound like'. Trigger on anything music-related: playing a song, pausing, skipping, switching speakers, adjusting volume, seeking within a track, searching the catalog, adding tracks to the library, building or managing playlists, finding similar music, checking what's playing, favoriting a song, recalling recently played music, adjusting the equalizer. Covers casual requests too: 'put on some house music', 'pause the music', 'next track', 'find me something like this', 'switch to my AirPods', 'add the bedroom to the group', 'turn down the kitchen', 'search for Gypsy Woman', 'add that track to my library', 'make a playlist from those results', 'add this to my workout playlist', 'play Kid A in the kitchen and living room at 60%', 'love this track', 'skip ahead 30 seconds', 'what was that song I played earlier', 'more bass', 'make it sound like a nightclub', 'turn off the EQ'. Handles Apple Music, AirPlay, HomePod, AirPods, Bluetooth audio, albums, artists, playlists, recommendations, new releases, listening history, heavy rotation, equalizer presets, and any audio routing on macOS."
 ---
 
 # Apple Music Controller
@@ -90,6 +90,24 @@ music volume up                                  # +10 on all active speakers
 music volume down                                # -10 on all active speakers
 music volume kitchen 80                          # set Kitchen to 80 (name resolved)
 ```
+
+## Equalizer (no auth)
+
+Real Music.app EQ control. Venue presets are created on first selection and
+persist as real presets (visible in Music's own EQ window).
+
+| Request | Command |
+|---|---|
+| "make it sound like a dungeon" / "nightclub mode" | `music eq dungeon` / `music eq nightclub` |
+| "more bass" | `music eq "Bass Booster"` |
+| "flat" / "turn off the EQ" | `music eq flat` / `music eq off` |
+| "what's the EQ?" | `music eq` |
+| "remove the venue presets" | `music eq remove-pack` |
+
+Venue pack: Nightclub, Dungeon, Open Air, Concert Hall, Jazz Club, Stadium,
+Cathedral, Late Night. Any other name forwards verbatim — Music's built-in
+presets (Acoustic, Hip-Hop, Loudness, …) all resolve. Unknown names print
+near-matches.
 
 ## Catalog Search (developer token only)
 

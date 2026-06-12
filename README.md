@@ -158,6 +158,19 @@ Naming speakers in `music play` routes playback to **exactly those speakers** �
 | `music volume up` / `down` | Volume ±10 |
 | `music volume kitchen 80` | Set a specific speaker to 80 |
 
+### Equalizer
+
+| Command | What it does |
+|---------|-------------|
+| `music eq` | Show active preset + EQ status |
+| `music eq nightclub` | Select a venue preset (fuzzy; created as a real Music.app preset on first use) |
+| `music eq "Bass Booster"` | Select any Music built-in preset by name |
+| `music eq list` | List all available presets (venue pack first, then Music's built-ins) |
+| `music eq on` / `music eq off` | Enable or disable EQ |
+| `music eq remove-pack` | Delete the venue preset pack |
+
+Venue pack (Nightclub, Dungeon, Open Air, Concert Hall, Jazz Club, Stadium, Cathedral, Late Night) — each is a real Music.app preset created on first selection and visible in Music's own EQ window. Selecting any preset auto-enables EQ. Unknown names print near-matches.
+
 ## CLI Commands
 
 ```
