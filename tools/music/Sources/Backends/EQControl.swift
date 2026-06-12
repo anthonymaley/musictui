@@ -1,48 +1,101 @@
-// Music.app equalizer access. Reads combine into one script; unrelated
-// mutations are never combined in one call (parameter-error-50 rule) —
-// creating a preset and initialising its own bands is one transaction.
+// Music.app equalizer access — two transports, by necessity:
+//
+//  * EQ PRESET objects (create / read bands / delete) script fine through
+//    the normal Music dictionary and go through runMusic.
+//  * LIVE state (EQ enabled, current preset) is severed in current
+//    Music.app builds: writes error (-10006 / -1731 in every reference
+//    form) and reads return stale values even while the real Equalizer
+//    is on — verified live 2026-06-12. The Equalizer window's own
+//    controls are the only working interface, so live state goes through
+//    System Events UI scripting. That requires Accessibility permission
+//    for the host terminal, and opens the Equalizer window (leaving it
+//    open) on first use.
+//
 // Free-function style mirrors fetchSpeakerDevices() in SpeakerCommands.swift.
 import Foundation
 
 struct EQSnapshot: Equatable {
     var enabled: Bool
-    var current: String?      // nil when Music has never had a preset set (-1728)
+    var current: String?      // nil when no preset has ever been chosen
     var presets: [String]
 }
 
-/// Pure parse of the RS/US-separated snapshot script output. Field separator
-/// is RS (0x1E), preset-name separator is US (0x1F) — names can contain commas.
-func parseEQSnapshot(_ raw: String) -> EQSnapshot? {
+let eqAccessibilityHint = """
+EQ control drives Music's Equalizer window and needs Accessibility permission: \
+System Settings → Privacy & Security → Accessibility → enable your terminal app, then retry.
+"""
+
+/// Pure parse of the UI status script output: "<0|1><RS><preset name>".
+func parseEQUIStatus(_ raw: String) -> (enabled: Bool, current: String?)? {
     let fields = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         .components(separatedBy: "\u{1E}")
-    guard fields.count == 3, fields[0] == "true" || fields[0] == "false" else { return nil }
-    return EQSnapshot(
-        enabled: fields[0] == "true",
-        current: fields[1].isEmpty ? nil : fields[1],
-        presets: fields[2].isEmpty ? [] : fields[2].components(separatedBy: "\u{1F}"))
+    guard fields.count == 2, fields[0] == "0" || fields[0] == "1" else { return nil }
+    return (fields[0] == "1", fields[1].isEmpty ? nil : fields[1])
+}
+
+/// Wraps a System Events body targeting the Equalizer window, opening the
+/// window via Music's Window menu when it isn't showing. `launch` (not
+/// `activate`) avoids stealing focus from the user's terminal.
+private func eqUIScript(_ body: String) -> String {
+    """
+    tell application "Music" to launch
+    tell application "System Events"
+        tell process "Music"
+            if not (exists window "Equalizer") then
+                click menu item "Equalizer" of menu "Window" of menu bar 1
+                delay 0.5
+            end if
+            tell window "Equalizer"
+                \(body)
+            end tell
+        end tell
+    end tell
+    """
+}
+
+/// Runs an Equalizer-window UI script, translating an assistive-access
+/// denial into an actionable message.
+private func eqUIRun(_ backend: AppleScriptBackend, _ body: String) throws -> String {
+    do {
+        return try syncRun { try await backend.run(eqUIScript(body)) }
+    } catch let error as AppleScriptBackend.ScriptError {
+        if case .executionFailed(let msg) = error,
+           msg.contains("assistive") || msg.contains("-1719") || msg.contains("-25211") {
+            throw AppleScriptBackend.ScriptError.executionFailed(eqAccessibilityHint)
+        }
+        throw error
+    }
 }
 
 func fetchEQSnapshot(_ backend: AppleScriptBackend) throws -> EQSnapshot {
-    let raw = try syncRun {
+    // Preset names: the scripting dictionary path still works for these.
+    let names = try syncRun {
         try await backend.runMusic("""
-            set rs to character id 30
             set us to character id 31
-            set curName to ""
-            try
-                set curName to name of current EQ preset
-            end try
             set nameList to ""
             repeat with p in EQ presets
                 if nameList is not "" then set nameList to nameList & us
                 set nameList to nameList & (name of p)
             end repeat
-            return ((EQ enabled) as string) & rs & curName & rs & nameList
+            return nameList
             """)
+    }.trimmingCharacters(in: .whitespacesAndNewlines)
+    // Live state: only the window tells the truth.
+    // Dereference into variables before coercing — `(value of checkbox 1)
+    // as string` coerces the unresolved specifier and errors -1700.
+    let raw = try eqUIRun(backend, """
+        set cbv to value of checkbox 1
+        set pv to ""
+        try
+            set pv to value of pop up button 1
+        end try
+        return (cbv as string) & (character id 30) & pv
+        """)
+    guard let ui = parseEQUIStatus(raw) else {
+        throw AppleScriptBackend.ScriptError.executionFailed("unparseable EQ state: \(raw.prefix(80))")
     }
-    guard let snap = parseEQSnapshot(raw) else {
-        throw AppleScriptBackend.ScriptError.executionFailed("unparseable EQ snapshot: \(raw.prefix(80))")
-    }
-    return snap
+    return EQSnapshot(enabled: ui.enabled, current: ui.current,
+                      presets: names.isEmpty ? [] : names.components(separatedBy: "\u{1F}"))
 }
 
 /// Ten band gains (32 Hz–16 kHz) of a named preset, for the status
@@ -61,12 +114,26 @@ func fetchEQBands(_ backend: AppleScriptBackend, name: String) throws -> [Double
 }
 
 func eqSetEnabled(_ backend: AppleScriptBackend, _ on: Bool) throws {
-    _ = try syncRun { try await backend.runMusic("set EQ enabled to \(on)") }
+    _ = try eqUIRun(backend, """
+        set cbv to value of checkbox 1
+        if (cbv as integer) is not \(on ? 1 : 0) then click checkbox 1
+        """)
 }
 
 func eqSetCurrent(_ backend: AppleScriptBackend, name: String) throws {
     let esc = escapeAppleScriptString(name)
-    _ = try syncRun { try await backend.runMusic("set current EQ preset to EQ preset \"\(esc)\"") }
+    _ = try eqUIRun(backend, """
+        tell pop up button 1
+            click
+            delay 0.2
+            if exists menu item "\(esc)" of menu 1 then
+                click menu item "\(esc)" of menu 1
+            else
+                key code 53
+                error "preset '\(esc)' is not in the Equalizer menu"
+            end if
+        end tell
+        """)
 }
 
 /// Create a venue preset if absent. An existing preset with the same name is

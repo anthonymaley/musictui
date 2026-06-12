@@ -45,23 +45,21 @@ final class EQModelTests: XCTestCase {
         XCTAssertEqual(EQNameResolver.resolve("xyzzy", in: presets), .none)
     }
 
-    func testParseEQSnapshot() {
-        let rs = "\u{1E}", us = "\u{1F}"
-        let raw = "true\(rs)Nightclub\(rs)Manual\(us)Acoustic\(us)Nightclub"
-        XCTAssertEqual(parseEQSnapshot(raw),
-                       EQSnapshot(enabled: true, current: "Nightclub",
-                                  presets: ["Manual", "Acoustic", "Nightclub"]))
+    func testParseEQUIStatusOn() {
+        let s = parseEQUIStatus("1\u{1E}Dungeon")
+        XCTAssertEqual(s?.enabled, true)
+        XCTAssertEqual(s?.current, "Dungeon")
     }
 
-    func testParseEQSnapshotNoCurrent() {
-        let rs = "\u{1E}", us = "\u{1F}"
-        let raw = "false\(rs)\(rs)Manual\(us)Acoustic"
-        let snap = parseEQSnapshot(raw)
-        XCTAssertEqual(snap, EQSnapshot(enabled: false, current: nil,
-                                        presets: ["Manual", "Acoustic"]))
+    func testParseEQUIStatusOffNoPreset() {
+        let s = parseEQUIStatus("0\u{1E}")
+        XCTAssertEqual(s?.enabled, false)
+        XCTAssertNil(s?.current ?? nil)
     }
 
-    func testParseEQSnapshotGarbage() {
-        XCTAssertNil(parseEQSnapshot("not a snapshot"))
+    func testParseEQUIStatusGarbage() {
+        XCTAssertNil(parseEQUIStatus("not a status"))
+        // The old scripting form ("true"/"false") must be rejected, not coerced.
+        XCTAssertNil(parseEQUIStatus("true\u{1E}Flat"))
     }
 }
