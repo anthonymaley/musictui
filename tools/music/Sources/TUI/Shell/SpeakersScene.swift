@@ -19,10 +19,26 @@ func speakerRows(from devices: [[String: Any]]) -> [SpeakerRow] {
     }
 }
 
+/// What the Speakers scene displays, in order: speakers, the EQ row, and —
+/// when the picker is expanded — one row per preset.
+enum SpeakersDisplayRow: Equatable {
+    case speaker(Int)        // index into the SpeakerRow array
+    case eq
+    case preset(String)
+}
+
+func speakersDisplayRows(speakerCount: Int, expanded: Bool,
+                         presetNames: [String]) -> [SpeakersDisplayRow] {
+    var rows: [SpeakersDisplayRow] = (0..<speakerCount).map { .speaker($0) }
+    rows.append(.eq)
+    if expanded { rows += presetNames.map { .preset($0) } }
+    return rows
+}
+
 final class SpeakersScene: Scene {
     let id: SceneID = .speakers
     let tabTitle = "Speakers"
-    var footerHint: String { "\u{2191}\u{2193} Speaker  Enter Toggle  \u{2190}\u{2192} Volume" }
+    var footerHint: String { "\u{2191}\u{2193} Move  Enter Toggle/Select  \u{2190}\u{2192} Volume/Preset" }
 
     private let backend: AppleScriptBackend
     private let status: StatusStore
@@ -30,12 +46,15 @@ final class SpeakersScene: Scene {
     private let speakerTargets = TargetAccumulator()
     private var rows: [SpeakerRow] = []
     private var cursor = 0
+    private var eqState: EQSnapshot? = nil
+    private var eqExpanded = false
 
     // Background refresh, inbox pattern: tick() kicks fetches and drains results.
     // The scene used to load once and never again — devices appearing/vanishing
     // never showed, and a failed optimistic toggle stayed wrong forever.
     private let inboxLock = NSLock()
     private var inbox: [SpeakerRow]? = nil
+    private var inboxEQ: EQSnapshot? = nil   // guarded by inboxLock
     private var fetchInFlight = false                 // tick()-thread only
     private var fetchStartedAt = Date.distantPast     // tick()-thread only
     private var lastFetchKickoff = Date.distantPast   // tick()-thread only
@@ -56,6 +75,7 @@ final class SpeakersScene: Scene {
         // in which case it's stale and would briefly revert the optimistic UI.
         inboxLock.lock()
         let fresh = inbox; inbox = nil
+        let freshEQ = inboxEQ; inboxEQ = nil
         inboxLock.unlock()
         if let fresh {
             fetchInFlight = false
@@ -67,6 +87,10 @@ final class SpeakersScene: Scene {
                 if cursor >= rows.count { cursor = max(0, rows.count - 1) }
                 changed = true
             }
+        }
+        if let freshEQ, fetchStartedAt > lastMutation {
+            eqState = freshEQ
+            changed = true
         }
         // Refresh on (re)entry — tick only runs while this scene is active, so a
         // gap since the last tick means the user just switched back — and every
@@ -87,13 +111,20 @@ final class SpeakersScene: Scene {
             lastFetchKickoff = now
             DispatchQueue.global().async { [weak self] in
                 let result = speakerRows(from: (try? fetchSpeakerDevices()) ?? [])
+                let eq = try? fetchEQSnapshot(self?.backend ?? AppleScriptBackend())
                 guard let self else { return }
                 self.inboxLock.lock()
                 self.inbox = result
+                self.inboxEQ = eq
                 self.inboxLock.unlock()
             }
         }
         return changed
+    }
+
+    private var pickerPresetNames: [String] {
+        let installed = eqState?.presets ?? []
+        return VenuePack.names + installed.filter { VenuePack.preset(named: $0) == nil }
     }
 
     func render(frame: ShellFrame, snapshot: NowPlayingSnapshot) -> String {
@@ -106,36 +137,83 @@ final class SpeakersScene: Scene {
         out += "\(ANSICode.bold)\(ANSICode.cyan)AirPlay Outputs\(ANSICode.reset)"
         y += 2
 
-        if rows.isEmpty {
-            let msg = everLoaded ? "No AirPlay outputs found." : "Loading speakers\u{2026}"
-            out += ANSICode.moveTo(row: y, col: 3) + "\(ANSICode.dim)\(msg)\(ANSICode.reset)"
-            return out
-        }
-
+        let displayRows = speakersDisplayRows(speakerCount: rows.count, expanded: eqExpanded,
+                                              presetNames: pickerPresetNames)
         let nameW = 18
         let barW = 16
         let bottom = frame.bodyY + frame.bodyHeight - 1
-        for (i, row) in rows.enumerated() {
+
+        for (dispIdx, dispRow) in displayRows.enumerated() {
             guard y <= bottom else { break }
-            out += ANSICode.moveTo(row: y, col: 3)
-            let isCursor = i == cursor
-            let marker = " "
-            let dot = row.active ? "\(ANSICode.lime)\u{25CF}\(ANSICode.reset)" : "\(ANSICode.dim)\u{25CB}\(ANSICode.reset)"
-            let name = truncText(row.name, to: nameW)
-            let padName = name + String(repeating: " ", count: max(0, nameW - name.count))
-            // Same selection language as the other tabs: inverse-video cursor.
-            let nameStr: String
-            if isCursor {
-                nameStr = "\(ANSICode.inverse)\(padName)\(ANSICode.reset)"
-            } else if row.active {
-                nameStr = "\(ANSICode.brightWhite)\(padName)\(ANSICode.reset)"
-            } else {
-                nameStr = "\(ANSICode.dim)\(padName)\(ANSICode.reset)"
+            let isCursor = dispIdx == cursor
+            switch dispRow {
+            case .speaker(let i):
+                let row = rows[i]
+                out += ANSICode.moveTo(row: y, col: 3)
+                let marker = " "
+                let dot = row.active ? "\(ANSICode.lime)\u{25CF}\(ANSICode.reset)" : "\(ANSICode.dim)\u{25CB}\(ANSICode.reset)"
+                let name = truncText(row.name, to: nameW)
+                let padName = name + String(repeating: " ", count: max(0, nameW - name.count))
+                // Same selection language as the other tabs: inverse-video cursor.
+                let nameStr: String
+                if isCursor {
+                    nameStr = "\(ANSICode.inverse)\(padName)\(ANSICode.reset)"
+                } else if row.active {
+                    nameStr = "\(ANSICode.brightWhite)\(padName)\(ANSICode.reset)"
+                } else {
+                    nameStr = "\(ANSICode.dim)\(padName)\(ANSICode.reset)"
+                }
+                let bar = meterBar(value: row.volume, width: barW)
+                let vol = String(format: "%3d", row.volume)
+                out += "\(marker) \(dot) \(nameStr) \(bar) \(vol)"
+                y += 1
+
+            case .eq:
+                // Optional blank line before EQ row when space allows.
+                if y + 1 <= bottom {
+                    y += 1
+                }
+                guard y <= bottom else { break }
+                out += ANSICode.moveTo(row: y, col: 3)
+                let dot = (eqState?.enabled == true)
+                    ? "\(ANSICode.lime)\u{25CF}\(ANSICode.reset)"
+                    : "\(ANSICode.dim)\u{25CB}\(ANSICode.reset)"
+                let presetName = eqState?.current ?? "none"
+                let label = "EQ  \(presetName)"
+                let padLabel = label + String(repeating: " ", count: max(0, nameW - label.count))
+                let labelStr: String
+                if isCursor {
+                    labelStr = "\(ANSICode.inverse)\(padLabel)\(ANSICode.reset)"
+                } else {
+                    labelStr = padLabel
+                }
+                out += "  \(dot) \(labelStr)"
+                y += 1
+
+            case .preset(let name):
+                guard y <= bottom else { break }
+                out += ANSICode.moveTo(row: y, col: 5)
+                let isCurrent = eqState?.current == name
+                let bullet = isCurrent ? "\u{25CF}" : " "
+                let padName = name + String(repeating: " ", count: max(0, nameW - name.count))
+                let nameStr: String
+                if isCursor {
+                    nameStr = "\(ANSICode.inverse)\(padName)\(ANSICode.reset)"
+                } else if isCurrent {
+                    nameStr = "\(ANSICode.brightWhite)\(padName)\(ANSICode.reset)"
+                } else {
+                    nameStr = "\(ANSICode.dim)\(padName)\(ANSICode.reset)"
+                }
+                out += "\(bullet) \(nameStr)"
+                y += 1
             }
-            let bar = meterBar(value: row.volume, width: barW)
-            let vol = String(format: "%3d", row.volume)
-            out += "\(marker) \(dot) \(nameStr) \(bar) \(vol)"
-            y += 1
+        }
+
+        // Show loading hint in the speaker section when no speakers have loaded yet.
+        if rows.isEmpty && !everLoaded && y <= bottom {
+            out += ANSICode.moveTo(row: y, col: 3)
+            let msg = "Loading speakers\u{2026}"
+            out += "\(ANSICode.dim)\(msg)\(ANSICode.reset)"
         }
 
         // No in-body key hints — the scene-aware footer already shows them.
@@ -143,40 +221,95 @@ final class SpeakersScene: Scene {
     }
 
     func handle(_ key: KeyPress) -> SceneAction {
-        guard !rows.isEmpty else {
-            if case .escape = key { return .pop }
-            return .none
+        let displayRows = speakersDisplayRows(speakerCount: rows.count, expanded: eqExpanded,
+                                              presetNames: pickerPresetNames)
+        let rowCount = displayRows.count   // always ≥ 1 (EQ row always present)
+
+        // Collapse the picker when Escape is pressed; otherwise pop.
+        if case .escape = key {
+            if eqExpanded {
+                eqExpanded = false
+                // Clamp cursor: it may have been on a preset row that no longer exists.
+                let collapsed = speakersDisplayRows(speakerCount: rows.count, expanded: false,
+                                                   presetNames: pickerPresetNames)
+                if cursor >= collapsed.count { cursor = max(0, collapsed.count - 1) }
+                return .redraw
+            }
+            return .pop
         }
+
         switch key {
         case .up:
             cursor = max(0, cursor - 1); return .redraw
         case .down:
-            cursor = min(rows.count - 1, cursor + 1); return .redraw
+            cursor = min(rowCount - 1, cursor + 1); return .redraw
         case .pageUp:
             cursor = max(0, cursor - 5); return .redraw
         case .pageDown:
-            cursor = min(rows.count - 1, cursor + 5); return .redraw
+            cursor = min(rowCount - 1, cursor + 5); return .redraw
         case .home:
             cursor = 0; return .redraw
         case .end:
-            cursor = rows.count - 1; return .redraw
+            cursor = rowCount - 1; return .redraw
         case .enter:
-            rows[cursor].active.toggle()
-            lastMutation = Date()
-            setSelected(rows[cursor])
-            return .redraw
+            let currentRow = displayRows.indices.contains(cursor) ? displayRows[cursor] : nil
+            switch currentRow {
+            case .speaker(let i):
+                rows[i].active.toggle()
+                lastMutation = Date()
+                setSelected(rows[i])
+                return .redraw
+            case .eq:
+                eqExpanded.toggle()
+                // Clamp after collapse.
+                if !eqExpanded {
+                    let collapsed = speakersDisplayRows(speakerCount: rows.count, expanded: false,
+                                                       presetNames: pickerPresetNames)
+                    if cursor >= collapsed.count { cursor = max(0, collapsed.count - 1) }
+                }
+                return .redraw
+            case .preset(let name):
+                selectEQPreset(name)
+                return .redraw
+            case nil:
+                return .none
+            }
         case .left:
-            rows[cursor].volume = max(0, rows[cursor].volume - 5)
-            lastMutation = Date()
-            setVolume(rows[cursor])
-            return .redraw
+            let currentRow = displayRows.indices.contains(cursor) ? displayRows[cursor] : nil
+            switch currentRow {
+            case .speaker(let i):
+                rows[i].volume = max(0, rows[i].volume - 5)
+                lastMutation = Date()
+                setVolume(rows[i])
+                return .redraw
+            case .eq:
+                let names = pickerPresetNames
+                guard !names.isEmpty else { return .none }
+                let idx = eqState?.current.flatMap { n in names.firstIndex(of: n) } ?? -1
+                let newIdx = ((idx - 1) + names.count) % names.count
+                selectEQPreset(names[newIdx])
+                return .redraw
+            default:
+                return .none
+            }
         case .right:
-            rows[cursor].volume = min(100, rows[cursor].volume + 5)
-            lastMutation = Date()
-            setVolume(rows[cursor])
-            return .redraw
-        case .escape:
-            return .pop
+            let currentRow = displayRows.indices.contains(cursor) ? displayRows[cursor] : nil
+            switch currentRow {
+            case .speaker(let i):
+                rows[i].volume = min(100, rows[i].volume + 5)
+                lastMutation = Date()
+                setVolume(rows[i])
+                return .redraw
+            case .eq:
+                let names = pickerPresetNames
+                guard !names.isEmpty else { return .none }
+                let idx = eqState?.current.flatMap { n in names.firstIndex(of: n) } ?? -1
+                let newIdx = (idx + 1) % names.count
+                selectEQPreset(names[newIdx])
+                return .redraw
+            default:
+                return .none
+            }
         default:
             return .none
         }
@@ -204,6 +337,22 @@ final class SpeakersScene: Scene {
             guard let v = self.speakerTargets.take(name) else { return }
             try require((try? syncRun { try await self.backend.runMusic("set sound volume of AirPlay device \"\(esc)\" to \(v)") }) != nil,
                         "Couldn't set '\(name)' volume.")
+        }
+    }
+    private func selectEQPreset(_ name: String) {
+        if eqState == nil { eqState = EQSnapshot(enabled: true, current: name, presets: []) }
+        eqState?.current = name
+        eqState?.enabled = true
+        lastMutation = Date()
+        actions.run("EQ") {
+            if let venue = VenuePack.preset(named: name) {
+                try require((try? eqEnsurePreset(self.backend, preset: venue)) != nil,
+                            "Couldn't create preset '\(name)'.")
+            }
+            try require((try? eqSetCurrent(self.backend, name: name)) != nil,
+                        "Couldn't select preset '\(name)'.")
+            try require((try? eqSetEnabled(self.backend, true)) != nil,
+                        "Couldn't enable EQ.")
         }
     }
 }

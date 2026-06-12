@@ -25,4 +25,16 @@ final class SpeakerRowTests: XCTestCase {
         let rows = speakerRows(from: devices)
         XCTAssertEqual(rows.map { $0.name }, ["Good"])
     }
+
+    func testDisplayRowsCollapsed() {
+        let rows = speakersDisplayRows(speakerCount: 2, expanded: false,
+                                       presetNames: ["Nightclub", "Manual"])
+        XCTAssertEqual(rows, [.speaker(0), .speaker(1), .eq])
+    }
+
+    func testDisplayRowsExpanded() {
+        let rows = speakersDisplayRows(speakerCount: 1, expanded: true,
+                                       presetNames: ["Nightclub", "Manual"])
+        XCTAssertEqual(rows, [.speaker(0), .eq, .preset("Nightclub"), .preset("Manual")])
+    }
 }
