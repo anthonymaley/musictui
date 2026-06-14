@@ -65,6 +65,11 @@ final class NowPlayingScene: Scene {
     private var gridRow = 0
     private var gridCol = 0
 
+    // Genius Shuffle latch: set when we trigger it, cleared once a real playlist
+    // or app queue takes over (Music exposes no genius flag — see geniusShouldClear).
+    private var geniusActive = false
+    private var geniusTriggeredAt = Date.distantPast
+
     init(backend: AppleScriptBackend, appQueue: AppQueueStore, status: StatusStore, actions: ActionRunner) {
         self.backend = backend
         self.appQueue = appQueue
@@ -136,6 +141,14 @@ final class NowPlayingScene: Scene {
                 self.modesLock.unlock()
             }
         }
+        // Drop the Genius latch once a real playlist / app queue takes over.
+        if geniusActive,
+           geniusShouldClear(elapsedSinceTrigger: now.timeIntervalSince(geniusTriggeredAt),
+                             hasAppQueue: appQueue.read() != nil,
+                             contextName: contextNameNow) {
+            geniusActive = false
+            changed = true
+        }
         // The snapshot-derived state above repaints via the store's generation
         // counter; `changed` covers a modes update that the generation misses.
         return changed
@@ -196,7 +209,9 @@ final class NowPlayingScene: Scene {
         for i in 0..<pbW { bar += i == knob ? "\(ANSICode.bold)\u{25CF}\(ANSICode.reset)" : "\(ANSICode.dim)\u{2500}\(ANSICode.reset)" }
         out += ANSICode.moveTo(row: my, col: leftX) + "\(elapsed) \(bar) \(total)"
         my += 2
-        if !snapshot.contextName.isEmpty {
+        if geniusActive {
+            out += ANSICode.moveTo(row: my, col: leftX) + "\(ANSICode.cyan)\u{2726} \(ANSICode.reset)\(ANSICode.bold)\(ANSICode.brightWhite)Genius Shuffle Active\(ANSICode.reset)"
+        } else if !snapshot.contextName.isEmpty {
             out += ANSICode.moveTo(row: my, col: leftX) + "\(ANSICode.cyan)\u{266A} \(ANSICode.reset)\(ANSICode.brightWhite)\(truncText(cleanContextName(snapshot.contextName), to: metaW - 3))\(ANSICode.reset)"
         }
 
@@ -208,7 +223,15 @@ final class NowPlayingScene: Scene {
         let listX = twoPane ? (leftX + leftW + 2) : leftX
         let listY = twoPane ? frame.bodyY : (my + 2)
         let listW = twoPane ? max(20, frame.width - listX - 1) : (frame.width - 6)
-        if listY + 1 <= listBottom {
+        if geniusActive {
+            // Genius's real queue isn't scriptable (the snapshot shows the
+            // alphabetical library), so don't present a misleading Up Next.
+            if listY + 1 <= listBottom {
+                out += ANSICode.moveTo(row: listY, col: listX) + "\(ANSICode.bold)\(ANSICode.cyan)Up Next\(ANSICode.reset)"
+                out += ANSICode.moveTo(row: listY + 2, col: listX) + "\(ANSICode.dim)Following Music's Genius queue.\(ANSICode.reset)"
+                out += ANSICode.moveTo(row: listY + 3, col: listX) + "\(ANSICode.dim)The track order isn't readable here.\(ANSICode.reset)"
+            }
+        } else if listY + 1 <= listBottom {
             // Adapt context entries to the timeline-row shape the shared renderer expects.
             let timeline = rows.map { e in
                 TimelineRow(
@@ -317,6 +340,7 @@ final class NowPlayingScene: Scene {
             modes?.songRepeat = rep
             actions.run("Repeat") { try require((try? setSongRepeat(self.backend, rep)) != nil, "Couldn't set repeat.") }
         case .genius, .none:
+            geniusActive = true; geniusTriggeredAt = Date()
             actions.run("Genius") { try require((try? triggerGeniusShuffle(self.backend)) != nil, "Genius Shuffle failed.") }
         }
     }
@@ -499,6 +523,7 @@ final class NowPlayingScene: Scene {
             return .redraw
         case .char("g"), .char("G"):
             // Genius Shuffle rebuilds the queue from the current song (UI-scripted).
+            geniusActive = true; geniusTriggeredAt = Date()
             actions.run("Genius") {
                 try require((try? triggerGeniusShuffle(self.backend)) != nil, "Genius Shuffle failed.")
             }

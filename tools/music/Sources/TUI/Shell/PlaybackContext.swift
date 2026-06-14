@@ -90,6 +90,16 @@ func isLibraryContextName(_ name: String) -> Bool {
     return n == "Music" || n == "Library"
 }
 
+/// Whether to drop the latched "Genius Shuffle active" state. Music exposes no
+/// genius flag and reports `current playlist` as the library during Genius, so
+/// the latch (set when we trigger Genius) clears once a real playlist or an
+/// app-owned queue takes over. The grace window keeps it set through the
+/// post-trigger snapshot lag, when the previous (real) context is still showing.
+func geniusShouldClear(elapsedSinceTrigger: TimeInterval, hasAppQueue: Bool, contextName: String) -> Bool {
+    if hasAppQueue { return true }
+    return elapsedSinceTrigger > 3 && !contextName.isEmpty && !isLibraryContextName(contextName)
+}
+
 /// Pure queue-end guard. Fires only when a real playlist's last track ended
 /// naturally and playback flipped to library autoplay — not on manual library
 /// browsing or mid-playlist changes.

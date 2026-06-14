@@ -22,4 +22,14 @@ final class PlaybackContextTests: XCTestCase {
         XCTAssertEqual(q.name, "")
         XCTAssertTrue(q.tracks.isEmpty)
     }
+    func testGeniusClearsWhenRealPlaylistTakesOver() {
+        // Within the grace window: keep it (post-trigger lag still shows old ctx).
+        XCTAssertFalse(geniusShouldClear(elapsedSinceTrigger: 1, hasAppQueue: false, contextName: "Friday Mix"))
+        // After grace, a real playlist context means Genius is over.
+        XCTAssertTrue(geniusShouldClear(elapsedSinceTrigger: 5, hasAppQueue: false, contextName: "Friday Mix"))
+        // Library context after grace = still Genius/library — keep it.
+        XCTAssertFalse(geniusShouldClear(elapsedSinceTrigger: 5, hasAppQueue: false, contextName: "Music"))
+        // An app-owned queue always wins immediately.
+        XCTAssertTrue(geniusShouldClear(elapsedSinceTrigger: 0, hasAppQueue: true, contextName: "Music"))
+    }
 }
