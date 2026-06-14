@@ -26,7 +26,11 @@ func continuationAction(for key: KeyPress) -> ContinuationAction? {
 final class NowPlayingScene: Scene {
     let id: SceneID = .nowPlaying
     let tabTitle = "Now"
-    var footerHint: String { "\u{2191}\u{2193} Browse  \u{2190}\u{2192} Seek  l \u{2665}  s/m Shuffle  r Repeat  g Genius  n Next\u{2011}up" }
+    var footerHint: String {
+        controlFocus
+            ? "\u{2191}\u{2193}\u{2190}\u{2192} Move cell  Enter Set  Esc Done  \u{2014} control grid"
+            : "\u{2191}\u{2193} Browse  \u{2190}\u{2192} Seek  l \u{2665}  c Controls  s/m Shuffle  r Repeat  g Genius"
+    }
 
     private let backend: AppleScriptBackend
     private let appQueue: AppQueueStore
@@ -54,6 +58,12 @@ final class NowPlayingScene: Scene {
     private var modesFetchStartedAt = Date.distantPast
     private var lastModesMutation = Date.distantPast
     private var lastModesKick = Date.distantPast
+
+    // Control grid: `c` moves focus into it; then ↑↓←→ move the cell cursor and
+    // Enter sets the value. Unfocused, the grid still shows live active state.
+    private var controlFocus = false
+    private var gridRow = 0
+    private var gridCol = 0
 
     init(backend: AppleScriptBackend, appQueue: AppQueueStore, status: StatusStore, actions: ActionRunner) {
         self.backend = backend
@@ -160,7 +170,8 @@ final class NowPlayingScene: Scene {
         // The art is rendered at a fixed 44 columns; below ~50 columns the
         // chafa lines wrap and corrupt the whole frame — skip art entirely.
         let artLines = frame.width >= 52 ? snapshot.artLines : []
-        let artRows = min(artLines.count, max(0, frame.bodyHeight - 7))
+        // Reserve room below the art for metadata (~7 rows) + the control grid (~6).
+        let artRows = min(artLines.count, max(0, frame.bodyHeight - 13))
         for i in 0..<artRows {
             out += ANSICode.moveTo(row: frame.bodyY + i, col: leftX) + "\(artLines[i])\(ANSICode.reset)"
         }
@@ -189,16 +200,9 @@ final class NowPlayingScene: Scene {
             out += ANSICode.moveTo(row: my, col: leftX) + "\(ANSICode.cyan)\u{266A} \(ANSICode.reset)\(ANSICode.brightWhite)\(truncText(cleanContextName(snapshot.contextName), to: metaW - 3))\(ANSICode.reset)"
         }
 
-        // Playback modes: live shuffle + repeat state (s shuffle, m mode, r repeat, g Genius).
-        if let m = modes {
-            let modesY = my + 1
-            if modesY <= (frame.bodyY + frame.bodyHeight - 1) {
-                let shuf = m.shuffleEnabled ? "on \u{00B7} \(m.shuffleMode.rawValue)" : "off"
-                let line = "\u{21C4} \(shuf)   \u{21BB} \(m.songRepeat.rawValue)"
-                out += ANSICode.moveTo(row: modesY, col: leftX)
-                out += "\(ANSICode.dim)\(truncText(line, to: metaW))\(ANSICode.reset)"
-            }
-        }
+        // Playback-control grid (shuffle/order/repeat/genius). Always shows live
+        // active state; `c` focuses it for arrow-navigation + Enter.
+        out += renderControlGrid(startY: my + 2, x: leftX, bottom: frame.bodyY + frame.bodyHeight - 1)
 
         // --- Up Next: right pane (wide) or below the metadata (narrow) ---
         let listX = twoPane ? (leftX + leftW + 2) : leftX
@@ -223,6 +227,42 @@ final class NowPlayingScene: Scene {
                 cursorIndex: cursor,
                 scrollOffset: &scroll
             )
+        }
+        return out
+    }
+
+    /// The playback-control grid: a label column then option cells per row.
+    /// Active value is bright; the focused cell (when `controlFocus`) is inverse.
+    private func renderControlGrid(startY: Int, x: Int, bottom: Int) -> String {
+        var out = ""
+        var y = startY
+        let labelW = 8
+        for row in 0..<ControlGrid.rowCount {
+            guard y <= bottom else { break }
+            out += ANSICode.moveTo(row: y, col: x)
+            let label = ControlGrid.labels[row]
+            let padLabel = label + String(repeating: " ", count: max(0, labelW - label.count))
+            out += "\(ANSICode.dim)\(padLabel)\(ANSICode.reset) "
+            let active = modes.flatMap { ControlGrid.activeColumn(row: row, modes: $0) }
+            var line = ""
+            for col in 0..<ControlGrid.cellCount(row: row) {
+                let cell = ControlGrid.cells[row][col]
+                let isActive = (col == active)
+                let isCursor = controlFocus && row == gridRow && col == gridCol
+                let styled: String
+                if isCursor {
+                    styled = "\(ANSICode.inverse)\(ANSICode.bold) \(cell) \(ANSICode.reset)"
+                } else if isActive {
+                    styled = "\(ANSICode.brightWhite)[\(cell)]\(ANSICode.reset)"
+                } else {
+                    styled = "\(ANSICode.dim) \(cell) \(ANSICode.reset)"
+                }
+                line += styled + " "
+            }
+            // `line` carries ANSI codes, so it isn't truncText'd (that counts
+            // escape bytes); the rows are short and fit the metadata column.
+            out += line
+            y += 1
         }
         return out
     }
@@ -257,6 +297,28 @@ final class NowPlayingScene: Scene {
             ly += 1
         }
         return out
+    }
+
+    /// Apply the focused control-grid cell: set the value (optimistically) and
+    /// run the AppleScript write. Maps the (row, col) cursor to the action.
+    private func applyControlCell() {
+        lastModesMutation = Date()
+        switch ControlRow(rawValue: gridRow) {
+        case .shuffle:
+            let on = gridCol == 0
+            modes?.shuffleEnabled = on
+            actions.run("Shuffle") { try require((try? setShuffleEnabled(self.backend, on)) != nil, "Couldn't set shuffle.") }
+        case .order:
+            let mode = ControlGrid.orderModes[gridCol]
+            modes?.shuffleMode = mode
+            actions.run("Shuffle mode") { try require((try? setShuffleMode(self.backend, mode)) != nil, "Couldn't set shuffle mode.") }
+        case .repeatMode:
+            let rep = ControlGrid.repeatModes[gridCol]
+            modes?.songRepeat = rep
+            actions.run("Repeat") { try require((try? setSongRepeat(self.backend, rep)) != nil, "Couldn't set repeat.") }
+        case .genius, .none:
+            actions.run("Genius") { try require((try? triggerGeniusShuffle(self.backend)) != nil, "Genius Shuffle failed.") }
+        }
     }
 
     private func act(on action: ContinuationAction) {
@@ -308,6 +370,28 @@ final class NowPlayingScene: Scene {
         if case .char("n") = key, !menuShownLastFrame {
             manualMenu = true; return .redraw
         }
+
+        // `c` toggles focus into the control grid (not while the queue-end menu owns input).
+        if case .char("c") = key, !menuShownLastFrame {
+            controlFocus.toggle()
+            if controlFocus { (gridRow, gridCol) = ControlGrid.clamp(row: gridRow, col: gridCol) }
+            return .redraw
+        }
+        // While the grid is focused, arrows move the cell cursor, Enter sets the
+        // value, Esc returns focus to the Up Next list. The s/m/r/g shortcuts
+        // below still work in either mode.
+        if controlFocus, !menuShownLastFrame {
+            switch key {
+            case .up:    (gridRow, gridCol) = ControlGrid.clamp(row: gridRow - 1, col: gridCol); return .redraw
+            case .down:  (gridRow, gridCol) = ControlGrid.clamp(row: gridRow + 1, col: gridCol); return .redraw
+            case .left:  (gridRow, gridCol) = ControlGrid.clamp(row: gridRow, col: gridCol - 1); return .redraw
+            case .right: (gridRow, gridCol) = ControlGrid.clamp(row: gridRow, col: gridCol + 1); return .redraw
+            case .enter: applyControlCell(); return .redraw
+            case .escape: controlFocus = false; return .redraw
+            default: break   // fall through: s/m/r/g/l still work
+            }
+        }
+
         switch key {
         case .up:
             guard !rows.isEmpty else { return .none }
