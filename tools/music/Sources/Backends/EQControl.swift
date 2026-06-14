@@ -73,9 +73,59 @@ private func eqUIRun(_ backend: AppleScriptBackend, _ body: String) throws -> St
     }
 }
 
-func fetchEQSnapshot(_ backend: AppleScriptBackend) throws -> EQSnapshot {
+// Read the window state ONLY if the Equalizer window is already open — never
+// opens it. Returns "CLOSED" otherwise. Used by the background poll, which must
+// not pop the window (it steals focus, e.g. from the visualizer).
+private func eqUIReadOnlyScript(_ body: String) -> String {
+    """
+    tell application "System Events"
+        tell process "Music"
+            if not (exists window "Equalizer") then return "CLOSED"
+            tell window "Equalizer"
+                \(body)
+            end tell
+        end tell
+    end tell
+    """
+}
+
+// Dereference into variables before coercing — `(value of checkbox 1) as string`
+// coerces the unresolved specifier and errors -1700.
+private let eqReadBody = """
+    set cbv to value of checkbox 1
+    set pv to ""
+    try
+        set pv to value of pop up button 1
+    end try
+    return (cbv as string) & (character id 30) & pv
+    """
+
+/// Best-effort EQ state from the scripting layer, for when the window isn't open
+/// and we don't want to open it. The live reads can be stale after UI changes,
+/// but on a fresh launch (before the window is ever opened) they're accurate.
+private func eqSnapshotFromScripting(_ backend: AppleScriptBackend, names: [String]) -> EQSnapshot {
+    let raw = (try? syncRun {
+        try await backend.runMusic("""
+            set en to (EQ enabled) as string
+            set cur to ""
+            try
+                set cur to name of current EQ preset
+            end try
+            return en & (character id 30) & cur
+            """)
+    })?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    let f = raw.components(separatedBy: "\u{1E}")
+    return EQSnapshot(enabled: f.first == "true",
+                      current: (f.count > 1 && !f[1].isEmpty) ? f[1] : nil,
+                      presets: names)
+}
+
+/// `openWindow: true` (CLI status, user actions) opens the Equalizer window to
+/// read the true live state. `false` (the TUI poll) never opens it — it reads
+/// only if already open, else falls back to the scripting layer.
+func fetchEQSnapshot(_ backend: AppleScriptBackend, openWindow: Bool = true) throws -> EQSnapshot {
     // Preset names: the scripting dictionary path still works for these.
-    let names = try syncRun {
+    let namesRaw = try syncRun {
         try await backend.runMusic("""
             set us to character id 31
             set nameList to ""
@@ -86,22 +136,22 @@ func fetchEQSnapshot(_ backend: AppleScriptBackend) throws -> EQSnapshot {
             return nameList
             """)
     }.trimmingCharacters(in: .whitespacesAndNewlines)
-    // Live state: only the window tells the truth.
-    // Dereference into variables before coercing — `(value of checkbox 1)
-    // as string` coerces the unresolved specifier and errors -1700.
-    let raw = try eqUIRun(backend, """
-        set cbv to value of checkbox 1
-        set pv to ""
-        try
-            set pv to value of pop up button 1
-        end try
-        return (cbv as string) & (character id 30) & pv
-        """)
+    let names = namesRaw.isEmpty ? [] : namesRaw.components(separatedBy: "\u{1F}")
+
+    let raw: String
+    if openWindow {
+        raw = try eqUIRun(backend, eqReadBody)
+    } else {
+        let out = try runMusicUIScript(backend, eqUIReadOnlyScript(eqReadBody), hint: eqAccessibilityHint)
+        if out.trimmingCharacters(in: .whitespacesAndNewlines) == "CLOSED" {
+            return eqSnapshotFromScripting(backend, names: names)
+        }
+        raw = out
+    }
     guard let ui = parseEQUIStatus(raw) else {
         throw AppleScriptBackend.ScriptError.executionFailed("unparseable EQ state: \(raw.prefix(80))")
     }
-    return EQSnapshot(enabled: ui.enabled, current: ui.current,
-                      presets: names.isEmpty ? [] : names.components(separatedBy: "\u{1F}"))
+    return EQSnapshot(enabled: ui.enabled, current: ui.current, presets: names)
 }
 
 /// Ten band gains (32 Hz–16 kHz) of a named preset, for the status

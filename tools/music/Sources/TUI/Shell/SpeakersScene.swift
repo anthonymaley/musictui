@@ -128,7 +128,9 @@ final class SpeakersScene: Scene {
             DispatchQueue.global().async { [weak self] in
                 let result = speakerRows(from: (try? fetchSpeakerDevices()) ?? [])
                 let backend = self?.backend ?? AppleScriptBackend()
-                let eq = try? fetchEQSnapshot(backend)
+                // openWindow: false — the poll must never pop the Equalizer
+                // window (it steals focus, e.g. from the visualizer).
+                let eq = try? fetchEQSnapshot(backend, openWindow: false)
                 let vis = try? visualizerStatus(backend)
                 guard let self else { return }
                 self.inboxLock.lock()
