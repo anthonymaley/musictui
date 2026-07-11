@@ -103,6 +103,16 @@ func verifyAndHealRoutes(speakers: [String], backend: AppleScriptBackend,
             lines.append("· \(speaker): could not resolve IP via Bonjour — routed but unverified.")
             continue
         }
+        // Fast path: the route may already be established (e.g. resuming on
+        // the already-routed speaker — pause does not tear down an AirPlay
+        // session, so the delta poll would see no churn and time out into an
+        // unnecessary heal). The steady-state fingerprint costs one netstat
+        // read and cannot pass for a just-torn-down route (teardown removes
+        // the session's second :7000 connection — spike evidence).
+        if let steady = try? verifier.steadyState(ip: ip), steady.verified {
+            lines.append("✓ \(speaker) verified (\(steady.evidence))")
+            continue
+        }
         let verdict = (try? verifier.verifyEstablishment(ip: ip, baseline: baseline))
             ?? RouteVerdict(verified: false, evidence: "verification errored", advisory: nil)
         if verdict.verified {
