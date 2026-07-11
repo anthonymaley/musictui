@@ -140,6 +140,22 @@ struct Play: ParsableCommand {
                 verbose("matched speakers \(parsed.speakers.joined(separator: ", ")) from args")
             }
 
+            // Verify-and-heal support: capture per-speaker network baselines
+            // BEFORE routing so establishment shows as churn afterward. A
+            // failed resolve degrades to an honest "unverified" note later —
+            // never a blocked play.
+            var routeBaselines: [String: Set<TCPConnection>] = [:]
+            var routeIPs: [String: String] = [:]
+            if !parsed.speakers.isEmpty {
+                let verifier = RouteVerifier()
+                for speaker in parsed.speakers {
+                    if let ip = verifier.resolver.resolveIP(forSpeaker: speaker) {
+                        routeIPs[speaker] = ip
+                        routeBaselines[speaker] = (try? verifier.snapshot(ip: ip)) ?? []
+                    }
+                }
+            }
+
             // Naming speakers means "play exactly there": select the targets
             // first, then prune the rest (same select-first, per-device-try
             // shape as the speaker command's exclusive mode — a teardown-first
@@ -229,6 +245,14 @@ struct Play: ParsableCommand {
                     _ = try syncRun {
                         try await backend.runMusic("set shuffle enabled to true")
                     }
+                }
+            }
+            // Routing issued while paused is untrusted (2/2 spike corruptions
+            // came from it): verify AFTER playback starts, heal mid-play.
+            if !parsed.speakers.isEmpty {
+                for line in verifyAndHealRoutes(speakers: parsed.speakers, backend: backend,
+                                                baselines: routeBaselines, ips: routeIPs) {
+                    print(line)
                 }
             }
             showNowPlaying(json: json, waitForPlay: true)
