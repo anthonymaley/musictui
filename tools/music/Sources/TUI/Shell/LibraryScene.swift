@@ -62,7 +62,9 @@ final class LibraryScene: Scene {
     private var albumsInbox: [LibraryAlbum]? = nil
     private var songsInbox: [LibrarySong]? = nil
     private var artistsInbox: [LibraryArtist]? = nil
-    private var artistAlbumsInbox: [LibraryAlbum]? = nil
+    // Tagged with the requested artistID so a slow fetch for a since-abandoned
+    // artist can be dropped in tick (last-writer-wins guard, like trackCache).
+    private var artistAlbumsInbox: (artistID: String, albums: [LibraryAlbum])? = nil
     private var previewInbox: [(id: String, tracks: [String])] = []
 
     init(backend: AppleScriptBackend, sources: LibraryDataSources,
@@ -129,7 +131,7 @@ final class LibraryScene: Scene {
             let fetched = sources.onArtistAlbums(artistID)
             guard let self else { return }
             self.inboxLock.lock()
-            self.artistAlbumsInbox = fetched
+            self.artistAlbumsInbox = (artistID, fetched)
             self.inboxLock.unlock()
         }
     }
@@ -190,8 +192,12 @@ final class LibraryScene: Scene {
             }
             changed = true
         }
-        if let freshArtistAlbums {
-            artistAlbums = freshArtistAlbums
+        // Apply an artist-albums fetch only if it's still for the current artist
+        // (id in the stack's .artistAlbums level); a stale one for an abandoned
+        // artist is dropped so it can't overwrite the current one under its
+        // breadcrumb (last-writer-wins guard).
+        if let freshArtistAlbums, freshArtistAlbums.artistID == currentArtistID() {
+            artistAlbums = freshArtistAlbums.albums
             artistAlbumsLoaded = true
             if case .artistAlbums = nav.current {
                 let count = visibleAlbumIndices().count
@@ -316,8 +322,10 @@ final class LibraryScene: Scene {
         let subViewChanged = newNav.subView != nav.subView
         let levelChanged = newNav.stack != nav.stack
         nav = newNav
-        if subViewChanged { filter = "" }
-        if subViewChanged || levelChanged { railScroll = 0; trackScroll = 0 }
+        // Clear the filter on a level change too (drill/back), not just a sub-view
+        // switch: a leftover artist-name query would otherwise narrow the drilled
+        // artist's ALBUMS wrongly and keep painting a stale /query line.
+        if subViewChanged || levelChanged { filter = ""; railScroll = 0; trackScroll = 0 }
 
         execute(action)
         switch action {
@@ -431,6 +439,15 @@ final class LibraryScene: Scene {
     private func breadcrumbArtistName() -> String? {
         for level in nav.stack {
             if case .artistAlbums(_, let name) = level { return name }
+        }
+        return nil
+    }
+
+    /// The drilled artist's id (from the stack's .artistAlbums level), or nil when
+    /// not inside an artist. Used to reject stale artist-album fetches in tick.
+    private func currentArtistID() -> String? {
+        for level in nav.stack {
+            if case .artistAlbums(let id, _) = level { return id }
         }
         return nil
     }
