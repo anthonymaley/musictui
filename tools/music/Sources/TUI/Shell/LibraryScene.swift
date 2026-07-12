@@ -28,6 +28,7 @@ final class LibraryScene: Scene {
     private var nav = LibraryNav.initial
     private var albums: [LibraryAlbum] = []
     private var albumsLoaded = false
+    private var albumsFetchStarted = false
     // Songs load lazily the first time the Songs sub-view is shown (unlike albums,
     // which load in init). songsFetchStarted gates the one-shot kick in tick so a
     // slow fetch isn't re-launched every frame.
@@ -74,12 +75,16 @@ final class LibraryScene: Scene {
         self.appQueue = appQueue
         self.status = status
         self.actions = actions
-        loadAlbums()
+        // All three sub-view lists load lazily the first time they're shown (see
+        // tick). The default sub-view is Artists, so the first tick kicks that;
+        // Albums/Songs load only when the user switches to them — no wasted
+        // (now-paginated) fetch of a list you never open.
     }
 
     // MARK: background loads
 
     private func loadAlbums() {
+        albumsFetchStarted = true
         let sources = self.sources
         Thread.detachNewThread { [weak self] in
             let fetched = sources.onAlbums()
@@ -205,7 +210,8 @@ final class LibraryScene: Scene {
             }
             changed = true
         }
-        // Lazily load songs / artists the first time their sub-view is shown.
+        // Lazily load each list the first time its sub-view is shown.
+        if nav.subView == .albums && !albumsFetchStarted { loadAlbums() }
         if nav.subView == .songs && !songsFetchStarted { loadSongs() }
         if nav.subView == .artists && !artistsFetchStarted { loadArtists() }
         for item in landedPreviews {
@@ -561,11 +567,16 @@ final class LibraryScene: Scene {
             out += "\(ANSICode.dim)\(msg)\(ANSICode.reset)"
             return
         }
-        // Which rail row is highlighted: the cursor at the album level, or the
-        // drilled-into album while browsing its tracks.
-        let atAlbumList = isAlbumList
+        // Which rail row is highlighted. renderRail runs at three levels: the
+        // Albums root (.albumList), an artist's albums (.artistAlbums), and the
+        // drilled-in .tracks. At the two LIST levels the highlight follows the
+        // cursor; only at .tracks does it instead mark the album whose tracks are
+        // showing. Gating on isAlbumList alone pinned the .artistAlbums highlight
+        // to row 0 while the right-pane preview tracked the cursor — the bug where
+        // the left selection "only appeared on Enter".
+        let cursorDriven = !isTracksLevel
         let cursorPos: Int
-        if atAlbumList {
+        if cursorDriven {
             cursorPos = min(max(0, nav.cursor), vis.count - 1)
         } else {
             cursorPos = drilledAlbumPos(in: vis) ?? 0
@@ -583,7 +594,7 @@ final class LibraryScene: Scene {
             let nm = railName(label, nameWidth: nameWidth)
             let padName = nm + String(repeating: " ", count: max(0, nameWidth - nm.count))
             if p == cursorPos {
-                if atAlbumList {
+                if cursorDriven {
                     out += "\u{258C} \(ANSICode.inverse)\(padName)\(ANSICode.reset)"
                 } else {
                     out += "\(ANSICode.dim)\u{258C}\(ANSICode.reset) \(ANSICode.brightWhite)\(padName)\(ANSICode.reset)"

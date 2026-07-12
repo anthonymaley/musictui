@@ -55,4 +55,38 @@ final class LibraryAPITests: XCTestCase {
       { "id": "l.bbb", "attributes": { "name": "OK Computer", "artistName": "Radiohead" } }
     ] }
     """
+
+    // MARK: - fetchAllPages (pagination walk)
+
+    /// 250 items over a page size of 100 → three fetches (100, 100, 50); the short
+    /// final page stops the walk. This is the artists-stuck-at-100 fix.
+    func testFetchAllPagesWalksUntilShortPage() {
+        let source = Array(0..<250)
+        var offsets: [Int] = []
+        let out: [Int] = fetchAllPages(pageSize: 100) { limit, offset in
+            offsets.append(offset)
+            let end = min(offset + limit, source.count)
+            return offset >= source.count ? [] : Array(source[offset..<end])
+        }
+        XCTAssertEqual(out.count, 250)
+        XCTAssertEqual(out, source)
+        XCTAssertEqual(offsets, [0, 100, 200])   // stops after the 50-item page
+    }
+
+    /// A single short page is the whole result and costs exactly one fetch.
+    func testFetchAllPagesSinglePage() {
+        var calls = 0
+        let out: [Int] = fetchAllPages(pageSize: 100) { _, _ in calls += 1; return Array(0..<30) }
+        XCTAssertEqual(out.count, 30)
+        XCTAssertEqual(calls, 1)
+    }
+
+    /// The cap is a safety valve against an endpoint that never returns a short
+    /// page: with cap 250 and always-full pages, the walk stops once it has ≥ cap.
+    func testFetchAllPagesHonorsCap() {
+        var calls = 0
+        let out: [Int] = fetchAllPages(pageSize: 100, cap: 250) { _, _ in calls += 1; return Array(0..<100) }
+        XCTAssertEqual(calls, 3)                  // 0→100→200 (200<250), then 300 ≥ 250 stops
+        XCTAssertEqual(out.count, 300)
+    }
 }

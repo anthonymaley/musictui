@@ -4,7 +4,9 @@
 // testable (mirrors how PlaylistBrowserModel pulls geometry out of the scene).
 import Foundation
 
-enum LibrarySubView: CaseIterable, Equatable { case albums, artists, songs }
+// Declaration order IS the on-screen sub-view order and the [ / ] cycle order:
+// Artists first (the primary browse axis), then Albums, then Songs.
+enum LibrarySubView: CaseIterable, Equatable { case artists, albums, songs }
 
 enum LibraryLevel: Equatable {
     case albumList, artistList, songList
@@ -41,7 +43,7 @@ struct LibraryNav: Equatable {
     var stack: [LibraryLevel]   // stack.last == current level
     var cursor: Int
 
-    static let initial = LibraryNav(subView: .albums, stack: [.albumList], cursor: 0)
+    static let initial = LibraryNav(subView: .artists, stack: [.artistList], cursor: 0)
     var current: LibraryLevel { stack.last! }
 
     static func root(for sub: LibrarySubView) -> LibraryLevel {
