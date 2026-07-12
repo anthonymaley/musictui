@@ -89,6 +89,16 @@ struct RESTAPIBackend {
         return parseLibraryAlbums(from: data)
     }
 
+    func librarySongs(limit: Int = 100, offset: Int = 0) async throws -> [LibrarySong] {
+        guard userToken != nil else { throw AuthError.userTokenRequired }
+        let (data, status) = try await get(librarySongsPath(limit: limit, offset: offset))
+        guard (200...299).contains(status) else {
+            if status == 401 || status == 403 { throw AuthError.userTokenExpired(status) }
+            throw APIError.requestFailed(status)
+        }
+        return parseLibrarySongs(from: data)
+    }
+
     // MARK: - Library Operations (require user token)
 
     func addToLibrary(songIDs: [String]) async throws {
@@ -321,6 +331,23 @@ func parseLibraryAlbums(from data: Data) -> [LibraryAlbum] {
         return LibraryAlbum(id: obj["id"] as? String ?? "",
                             name: a["name"] as? String ?? "Unknown",
                             artist: a["artistName"] as? String ?? "Unknown")
+    }
+}
+
+struct LibrarySong { let id: String; let title: String; let artist: String; let album: String
+    func toDict() -> [String: Any] { ["id": id, "title": title, "artist": artist, "album": album] } }
+
+func librarySongsPath(limit: Int, offset: Int) -> String {
+    "/v1/me/library/songs?limit=\(limit)&offset=\(offset)"
+}
+
+func parseLibrarySongs(from data: Data) -> [LibrarySong] {
+    parseLibraryDataArray(from: data).map { obj in
+        let a = obj["attributes"] as? [String: Any] ?? [:]
+        return LibrarySong(id: obj["id"] as? String ?? "",
+                           title: a["name"] as? String ?? "Unknown",
+                           artist: a["artistName"] as? String ?? "Unknown",
+                           album: a["albumName"] as? String ?? "")
     }
 }
 

@@ -22,6 +22,20 @@ final class LibraryAPITests: XCTestCase {
         XCTAssertTrue(parseLibraryAlbums(from: Data("nope".utf8)).isEmpty)
     }
 
+    func testParsesLibrarySongs() {
+        let json = """
+        { "data": [ { "id": "i.s1", "attributes": { "name": "Idioteque", "artistName": "Radiohead", "albumName": "Kid A" } } ] }
+        """
+        let r = parseLibrarySongs(from: Data(json.utf8))
+        XCTAssertEqual(r.first?.title, "Idioteque")
+        XCTAssertEqual(r.first?.artist, "Radiohead")
+        XCTAssertEqual(r.first?.album, "Kid A")
+    }
+
+    func testSongsPath() {
+        XCTAssertEqual(librarySongsPath(limit: 100, offset: 0), "/v1/me/library/songs?limit=100&offset=0")
+    }
+
     static let albums = """
     { "data": [
       { "id": "l.aaa", "attributes": { "name": "Kid A", "artistName": "Radiohead" } },
