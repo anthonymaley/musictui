@@ -21,6 +21,7 @@ if command -v "$MUSIC_CLI" &>/dev/null; then
         # jq survives escaped quotes in track titles; the grep fallback truncates there.
         STATE=$(echo "$JSON" | jq -r '.state // empty')
         [ "$STATE" = "stopped" ] && exit 0
+        LIVE=$(echo "$JSON" | jq -r 'if .live then "1" else "" end')
         TRACK=$(echo "$JSON" | jq -r '.track // empty')
         ARTIST=$(echo "$JSON" | jq -r '.artist // empty')
         SPEAKERS=$(echo "$JSON" | jq -r '[.speakers[]?.name] | join(", ")')
@@ -28,6 +29,7 @@ if command -v "$MUSIC_CLI" &>/dev/null; then
     else
         STATE=$(echo "$JSON" | grep -o '"state":"[^"]*"' | cut -d'"' -f4)
         [ "$STATE" = "stopped" ] && exit 0
+        echo "$JSON" | grep -q '"live":true' && LIVE=1 || LIVE=""
         TRACK=$(echo "$JSON" | grep -o '"track":"[^"]*"' | cut -d'"' -f4)
         ARTIST=$(echo "$JSON" | grep -o '"artist":"[^"]*"' | cut -d'"' -f4)
         SPEAKERS=$(echo "$JSON" | grep -o '"speakers":\[[^]]*\]' | grep -o '"name":"[^"]*"' | cut -d'"' -f4 | paste -sd', ' -)
@@ -35,11 +37,19 @@ if command -v "$MUSIC_CLI" &>/dev/null; then
     fi
 
     [ "$STATE" = "playing" ] && ICON="▶" || ICON="⏸"
+    [ -n "$LIVE" ] && ICON="$ICON ◉"
+
+    # BBC Radio 1 reports an empty artist; Apple's live stations report the song.
+    if [ -n "$ARTIST" ]; then
+        LABEL="$TRACK — $ARTIST"
+    else
+        LABEL="$TRACK"
+    fi
 
     if [ -n "$SPEAKERS" ]; then
-        echo "$ICON $TRACK — $ARTIST  ·  $SPEAKERS [$VOLUMES]"
+        echo "$ICON $LABEL  ·  $SPEAKERS [$VOLUMES]"
     else
-        echo "$ICON $TRACK — $ARTIST"
+        echo "$ICON $LABEL"
     fi
 else
     osascript -e '
