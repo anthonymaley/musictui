@@ -67,10 +67,14 @@ final class RadioScene: Scene {
 
     private var rows: [Station] {
         let base: [Station]
-        switch nav.subView {
-        case .favorites: base = store.favorites()
-        case .live:      base = live
-        case .personal:  base = personal
+        if !searchHits.isEmpty {
+            base = searchHits
+        } else {
+            switch nav.subView {
+            case .favorites: base = store.favorites()
+            case .live:      base = live
+            case .personal:  base = personal
+            }
         }
         guard !filter.isEmpty else { return base }
         return base.filter { $0.name.localizedCaseInsensitiveContains(filter) }
@@ -113,13 +117,34 @@ final class RadioScene: Scene {
 
         let key = vimAlias(key, listScene: true)
 
+        // Esc here (NOT the `capturing`/`adding` branches above, which handle
+        // their own Esc) clears an active search back to the current sub-view.
+        // With no search active there's nothing to clear, so it's a no-op —
+        // this must NOT eat Esc for anything else.
+        if key == .escape {
+            guard !searchHits.isEmpty else { return .none }
+            searchHits = []
+            nav.cursor = 0
+            message = nil
+            return .redraw
+        }
+
         let rKey: RadioKey
         switch key {
         case .up:    rKey = .up
         case .down:  rKey = .down
         case .enter, .right: rKey = .enter
-        case .char("["): rKey = .switchPrev
-        case .char("]"): rKey = .switchNext
+        case .char("["):
+            // Switching sub-views while search results are showing would
+            // otherwise leave `rows` still pinned to `searchHits` (see the
+            // `rows` computed property) — the view would appear not to
+            // switch at all. Clear the search along with the message that
+            // describes it.
+            searchHits = []; message = nil
+            rKey = .switchPrev
+        case .char("]"):
+            searchHits = []; message = nil
+            rKey = .switchNext
         case .char("f"): rKey = .toggleFav
         case .char("/"): capturing = true; return .redraw
         case .char("a"): adding = true; addText = ""; message = nil; return .redraw
@@ -249,7 +274,7 @@ final class RadioScene: Scene {
                 ? "✗ Search failed"
                 : freshSearch.hits.isEmpty
                     ? "No stations for \u{201C}\(freshSearch.term)\u{201D} — try pasting the station URL"
-                    : "\(freshSearch.hits.count) result(s) — f to favorite"
+                    : "Search \u{201C}\(freshSearch.term)\u{201D} — \(freshSearch.hits.count) result(s) \u{00B7} f favorite \u{00B7} Esc clear"
             changed = true
         }
         return changed
