@@ -87,20 +87,48 @@ func playlistZones(width: Int) -> PlaylistZones {
 
 // MARK: - Gradient block (deterministic identity, not real artwork)
 
-private let gradientGlyphs = "\u{2588}\u{2593}\u{2592}\u{2591}"  // full/dark/medium/light shade
+private let gradientGlyphs = "\u{2588}\u{2593}\u{2592}\u{2591}"  // full/dark/medium/light shade — dark→light ramp
 
 /// Build a deterministic block of `height` strings, each `width` glyphs,
 /// seeded by the playlist name. No color codes here — caller wraps with color.
+///
+/// This is a smooth directional ramp, not noise: the seed picks one of four
+/// ramp angles (horizontal, vertical, and the two diagonals) and whether it
+/// runs forward or reversed, so different names read as visibly different
+/// gradients while the shading itself stays a monotonic dark→light sweep
+/// across the block (never a repeating tile).
 func gradientBlock(name: String, width: Int, height: Int) -> [String] {
     guard width > 0, height > 0 else { return [] }
     var seed = 5381
     for b in name.unicodeScalars { seed = ((seed << 5) &+ seed) &+ Int(b.value) }
     let glyphs = Array(gradientGlyphs)
+    let glyphCount = glyphs.count
+
+    let direction = seed & 0x3           // 0=horizontal 1=vertical 2=diagonal ↘ 3=diagonal ↙
+    let reversed = (seed >> 2) & 0x1 == 1
+
+    // Normalize row/col to 0...1 across the block; guard the 1-row/1-col
+    // degenerate case so we never divide by zero.
+    let maxRow = Double(max(height - 1, 1))
+    let maxCol = Double(max(width - 1, 1))
+
     var rows: [String] = []
+    rows.reserveCapacity(height)
     for r in 0..<height {
+        let rNorm = Double(r) / maxRow
         var line = ""
+        line.reserveCapacity(width)
         for c in 0..<width {
-            let idx = abs((seed &+ r &* 31 &+ c &* 7)) % glyphs.count
+            let cNorm = Double(c) / maxCol
+            var t: Double
+            switch direction {
+            case 0: t = cNorm
+            case 1: t = rNorm
+            case 2: t = (rNorm + cNorm) / 2
+            default: t = (rNorm + (1 - cNorm)) / 2
+            }
+            if reversed { t = 1 - t }
+            let idx = min(glyphCount - 1, Int(t * Double(glyphCount)))
             line.append(glyphs[idx])
         }
         rows.append(line)

@@ -86,6 +86,64 @@ final class PlaylistBrowserModelTests: XCTestCase {
         XCTAssertNotEqual(a, c)
     }
 
+    // Old buggy formula was `idx = abs(seed + r*31 + c*7) % 4`. Since
+    // 31 % 4 == 3 and 7 % 4 == 3, idx(r, c) == idx(r + 4, c) == idx(r, c + 4)
+    // for every r, c — a strict 4x4 repeating tile (a basket-weave lattice),
+    // not a gradient. A real ramp must show variation across a 4-row or
+    // 4-column shift somewhere in the block; the old lattice never did,
+    // for any name. Verified this assertion fails against the pre-fix
+    // implementation (reverted locally, ran the test, saw it fail) before
+    // restoring the fix.
+    func testGradientIsNotAPeriodicLattice() {
+        let width = 16, height = 16
+        for name in ["House Classics", "Jazz Nights", "Deep House Finds", "Bluecoats 2024", "Replay 2022", "Loops"] {
+            let block = gradientBlock(name: name, width: width, height: height)
+            let grid = block.map { Array($0) }
+
+            var rowShiftDiffers = false
+            for r in 0..<(height - 4) where grid[r] != grid[r + 4] {
+                rowShiftDiffers = true
+                break
+            }
+            var colShiftDiffers = false
+            outer: for r in 0..<height {
+                for c in 0..<(width - 4) where grid[r][c] != grid[r][c + 4] {
+                    colShiftDiffers = true
+                    break outer
+                }
+            }
+            XCTAssertTrue(rowShiftDiffers || colShiftDiffers,
+                           "\(name): gradient must vary across a 4-row or 4-col shift, not tile like the old lattice bug")
+        }
+    }
+
+    func testGradientRowWidthMatchesRequestedWidth() {
+        for (w, h) in [(1, 1), (3, 7), (12, 5), (54, 22)] {
+            let block = gradientBlock(name: "Deep House Finds", width: w, height: h)
+            XCTAssertEqual(block.count, h)
+            for row in block {
+                XCTAssertEqual(row.count, w, "row width mismatch for size \(w)x\(h)")
+            }
+        }
+    }
+
+    func testGradientDegenerateSizesDoNotCrash() {
+        XCTAssertEqual(gradientBlock(name: "Loops", width: 0, height: 10), [])
+        XCTAssertEqual(gradientBlock(name: "Loops", width: 10, height: 0), [])
+        XCTAssertEqual(gradientBlock(name: "Loops", width: 0, height: 0), [])
+        let single = gradientBlock(name: "Loops", width: 1, height: 1)
+        XCTAssertEqual(single.count, 1)
+        XCTAssertEqual(single[0].count, 1)
+    }
+
+    func testGradientDeterministicAcrossSizes() {
+        for (w, h) in [(1, 1), (12, 5), (54, 22)] {
+            let a = gradientBlock(name: "Bluecoats 2024", width: w, height: h)
+            let b = gradientBlock(name: "Bluecoats 2024", width: w, height: h)
+            XCTAssertEqual(a, b, "size \(w)x\(h) must be deterministic")
+        }
+    }
+
     // rail name truncation
     func testRailNameTruncatesWithEllipsis() {
         let r = railName("A Very Long Playlist Name That Overflows", nameWidth: 10)
