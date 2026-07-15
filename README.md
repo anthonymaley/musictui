@@ -347,7 +347,7 @@ Under the track progress is a **control grid** (Shuffle / Order / Repeat / Geniu
 
 ![Now Playing](media/nowplaying.png)
 
-**Playlists tab** — left: playlists (instant highlight on `↑↓`, no fetch; `/` filters as you type, arrows still navigate). Right: tracks (loaded on `Enter`, which also pins the playlist on the Now tab). `p` plays playlist, `s` shuffles, `b`/`Esc` goes back. Apple-curated playlists you've added to your library (Replay, Essentials, etc.) appear with an `APPLE` badge — no need to duplicate them, so they keep receiving Apple's weekly/monthly updates.
+**Playlists tab** — left: playlists (instant highlight on `↑↓`, no fetch; `/` filters as you type, arrows still navigate). Right: tracks (loaded on `Enter`, which also pins the playlist on the Now tab). `p` plays playlist, `s` shuffles, `b`/`Esc` goes back. Apple-curated playlists you've added to your library (Replay, Essentials, etc.) appear with an `APPLE` badge — no need to duplicate them, so they keep receiving Apple's weekly/monthly updates. The focused playlist shows its real cover art when signed in (built-in smart playlists keep a generated placeholder).
 
 ![Playlist Browser](media/playlist.jpg)
 
@@ -355,7 +355,7 @@ Under the track progress is a **control grid** (Shuffle / Order / Repeat / Geniu
 
 ![Speaker Picker](media/speakers.png)
 
-**Library tab** (needs the Apple Music user token) — browse your library in three sub-views, **Artists · Albums · Songs** (opens on Artists), switched with `[`/`]`. `Enter` opens an album's tracks or drills Artist → their albums → tracks; `p` plays and `s` shuffles the focused item (albums/artists play as an app-owned queue — a scoped, navigable Up Next that stops at the album's end; needs Autoplay ∞ off). `/` filters as you type. On the Artists list, `a` cycles a track-count filter — **All → 12″/EP → Albums** — which cuts the bloat Apple's library-artists list carries (every artist with any library track, even one dragged in by a single playlist song) and separates 12″s/EPs from full-album deep cuts; drilling into an artist shows only that tier's albums. The first activation each session paints instantly from a cache, revalidated in the background.
+**Library tab** (needs the Apple Music user token) — browse your library in three sub-views, **Artists · Albums · Songs** (opens on Artists), switched with `[`/`]`. `Enter` opens an album's tracks or drills Artist → their albums → tracks; `p` plays and `s` shuffles the focused item (albums/artists play as an app-owned queue — a scoped, navigable Up Next that stops at the album's end; needs Autoplay ∞ off). `/` filters as you type. On the Artists list, `a` cycles a track-count filter — **All → 12″/EP → Albums** — which cuts the bloat Apple's library-artists list carries (every artist with any library track, even one dragged in by a single playlist song) and separates 12″s/EPs from full-album deep cuts; drilling into an artist shows only that tier's albums. The first activation each session paints instantly from a cache, revalidated in the background. The focused album shows its real cover art, rendered in the terminal — fetched once, cached on disk.
 
 ## Status Line
 
