@@ -8,9 +8,10 @@ import Foundation
 
 /// One cover's render result: half-block text lines (the chafa/mono fallback
 /// ladder, unchanged) or a kitty-protocol placement descriptor. `transmit` is
-/// non-nil exactly once per id per session (design doc sharp edge #3,
-/// "Transmit once, place per frame-change") — callers place unconditionally
-/// but only emit the transmit escape when it's non-nil.
+/// non-nil whenever the PNG conversion has completed — callers place
+/// unconditionally but only emit the transmit escape when it's non-nil (nil
+/// only while the fetch/convert is still in flight; once cached it is handed
+/// out on every call, see the `kittyEscape` comment below for why).
 enum ArtBlock {
     case lines([String])
     case kitty(id: UInt32, transmit: String?)
@@ -37,11 +38,22 @@ final class ArtworkStore {
     private var inFlight: Set<String> = []            // memoKey (lines) or "kitty|\(key)" (block)
     private var failed: Set<String> = []             // per-session negative cache (bytes OR PNG conversion)
     // Kitty path: the transmit escape is built once per key (PNG conversion is
-    // the expensive part) and handed out exactly once — `transmitted` gates
-    // every call after the first to `.kitty(id:, transmit: nil)` regardless of
-    // whether `kittyEscape` still holds the string.
+    // the expensive part) and cached here. It USED to be handed out exactly
+    // once per id (a `transmitted: Set<UInt32>` gate returned `.kitty(id:,
+    // transmit: nil)` on every call after the first), on the theory that
+    // `d=i` (lowercase delete, KittyGraphics.kittyDeleteEscape) keeps the
+    // image data resident so a bare `a=p` could re-display it later without
+    // re-sending bytes. Shipped in 3.6.0, confirmed broken live (both Radio
+    // and Library tabs): scroll away from a cover and back, and it never
+    // reappears — either the terminal frees the data anyway or `a=p` isn't
+    // honored for an id that isn't currently placed. DO NOT reintroduce a
+    // once-per-id transmit gate here. The escape is cheap to re-emit (it's
+    // just re-sending already-converted PNG bytes to a local terminal); the
+    // expensive PNG conversion itself stays cached below regardless. The
+    // caller-side placement dedup (see `renderArtHero` / each scene's
+    // `lastPlaced`) already prevents re-transmitting on unchanged frames —
+    // this only fires again when the displayed cover actually changes.
     private var kittyEscape: [String: String] = [:]  // key → cached transmit escape
-    private var transmitted: Set<UInt32> = []         // ids already handed a non-nil transmit
 
     init(cacheDir: String = NSString(string: "~/.config/music/art-cache").expandingTildeInPath,
          fetch: ((String) -> Data?)? = nil,
@@ -106,11 +118,11 @@ final class ArtworkStore {
     /// `.lines`. `kitty: true` ensures bytes are on disk, converts them to PNG
     /// off the main thread (the protocol's direct-transmit format is PNG-only;
     /// cached bytes are JPEG — design doc sharp edge #2), and returns a stable
-    /// id + the transmit escape the FIRST time only — `nil` transmit on every
-    /// call after (sharp edge #3: "Transmit once, place per frame-change").
-    /// PNG conversion failure is treated like a render failure: negative-cached
-    /// in `failed`, same as a fetch failure. While bytes/PNG aren't ready yet,
-    /// returns nil and fires `onReady` later, same as `lines()`.
+    /// id + the cached transmit escape on EVERY call once the PNG is ready
+    /// (see the `kittyEscape` comment above for why it's no longer gated to
+    /// once per id). PNG conversion failure is treated like a render failure:
+    /// negative-cached in `failed`, same as a fetch failure. While bytes/PNG
+    /// aren't ready yet, returns nil and fires `onReady` later, same as `lines()`.
     func block(key rawKey: String, url: String, width: Int, height: Int,
                kitty: Bool, onReady: @escaping () -> Void) -> ArtBlock? {
         guard kitty else {
@@ -121,9 +133,7 @@ final class ArtworkStore {
         let inFlightKey = "kitty|\(key)"
 
         lock.lock()
-        if transmitted.contains(id) { lock.unlock(); return .kitty(id: id, transmit: nil) }
         if let escape = kittyEscape[key] {
-            transmitted.insert(id)
             lock.unlock()
             return .kitty(id: id, transmit: escape)
         }

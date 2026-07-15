@@ -124,12 +124,24 @@ final class ArtworkStoreTests: XCTestCase {
         XCTAssertEqual(l, ["ART"])
     }
 
-    func testBlockKittyTrueTransmitsOnceThenNilTransmitWithSameID() {
+    /// Regression test for the 3.6.0 "art shows once per session" bug: the
+    /// store used to gate the transmit escape to the FIRST call per id
+    /// (`transmitted: Set<UInt32>`), returning `.kitty(id:, transmit: nil)`
+    /// on every call after — on the theory that the terminal's `d=i` delete
+    /// kept image data resident so a bare placement could re-display it.
+    /// Confirmed false live: scrolling away from a cover and back never
+    /// brought it back. The store must now hand out the cached escape on
+    /// EVERY call once the PNG conversion has completed, so a revisit can
+    /// always re-transmit — the expensive PNG conversion itself still only
+    /// runs once (see `fetches` below), and per-frame re-emission is
+    /// prevented by the caller-side placement dedup, not by this store.
+    func testBlockKittyTrueKeepsHandingOutTransmitOnRepeatCallsForSameID() {
         let dir = tmpDir(); defer { try? FileManager.default.removeItem(atPath: dir) }
         guard let jpeg = makeSolidColorJPEGFixture() else { XCTFail("failed to build JPEG fixture"); return }
+        var fetches = 0
         let ready = expectation(description: "onReady")
         let store = ArtworkStore(cacheDir: dir,
-                                 fetch: { _ in jpeg },
+                                 fetch: { _ in fetches += 1; return jpeg },
                                  render: { _, _, _ in XCTFail("render (chafa) path must not run for kitty"); return [] })
         XCTAssertNil(store.block(key: "k.2", url: "u", width: 8, height: 4, kitty: true) { ready.fulfill() })
         wait(for: [ready], timeout: 2)
@@ -140,11 +152,21 @@ final class ArtworkStoreTests: XCTestCase {
         XCTAssertNotNil(transmit1)
         XCTAssertTrue(transmit1?.hasPrefix("\u{1B}_G") ?? false)
 
+        // Simulate "scrolled away and back": call again for the same id.
         guard case .kitty(let id2, let transmit2) = store.block(key: "k.2", url: "u", width: 8, height: 4, kitty: true, onReady: {}) else {
             XCTFail("expected .kitty"); return
         }
         XCTAssertEqual(id1, id2)
-        XCTAssertNil(transmit2)
+        XCTAssertEqual(transmit2, transmit1, "revisit must still carry the transmit escape, not nil")
+
+        // A third call, for good measure — this is not a one-more-time gate.
+        guard case .kitty(_, let transmit3) = store.block(key: "k.2", url: "u", width: 8, height: 4, kitty: true, onReady: {}) else {
+            XCTFail("expected .kitty"); return
+        }
+        XCTAssertEqual(transmit3, transmit1)
+
+        // The expensive part (fetch + PNG conversion) still only ran once.
+        XCTAssertEqual(fetches, 1)
     }
 
     func testBlockKittyPNGConversionFailureIsNegativeCached() {
