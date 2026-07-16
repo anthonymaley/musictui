@@ -19,10 +19,11 @@ func runShell() {
     let backend = AppleScriptBackend()
     let store = NowPlayingStore()
     let appQueue = AppQueueStore()
+    let queueStore = QueueStore()
     let status = StatusStore()
     let actions = ActionRunner(status: status)
     let volumeDelta = DeltaAccumulator()
-    let poller = PlaybackPoller(store: store, backend: backend, appQueue: appQueue)
+    let poller = PlaybackPoller(store: store, backend: backend, appQueue: appQueue, queueStore: queueStore)
     let terminal = TerminalState.shared
     // Computed once (env-based, no stdin response parsing — design doc sharp
     // edge #5) and threaded into every art-rendering scene.
@@ -121,6 +122,11 @@ func runShell() {
 
     terminal.enterRawMode()
     print(ANSICode.cursorHome + ANSICode.clearScreen, terminator: "")
+    // Queue resume: adopt the last session's app-owned queue if it still
+    // matches what's actually playing (docs/plans/2026-07-16-queue-resume-design.md).
+    // Must run before poller.start() — after this line only the poller
+    // touches queueStore, so there's no concurrent access and no lock needed.
+    restoreQueueOnLaunch(queueStore: queueStore, appQueue: appQueue, backend: backend)
     poller.start()
     // Sweep temp queue playlists left by a prior session (sparing the one still
     // playing). Off-main so a slow Music doesn't delay first paint.

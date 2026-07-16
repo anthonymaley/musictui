@@ -226,4 +226,74 @@ final class QueueResumeTests: XCTestCase {
         XCTAssertFalse(queueMatches(playingPersistentID: "ID-1", playingName: "Excursions",
                                      playingArtist: "A Tribe Called Quest", saved: s))
     }
+
+    // MARK: - queueShouldSave / queueShouldClear (poller write-cadence)
+
+    func testQueueShouldSaveFalseWhenNoActiveQueue() {
+        XCTAssertFalse(queueShouldSave(active: nil, lastWritten: makeQueue(3)))
+    }
+
+    func testQueueShouldSaveTrueOnFirstWrite() {
+        // lastWritten nil (fresh poller / just-restored queue) always saves once.
+        XCTAssertTrue(queueShouldSave(active: makeQueue(3), lastWritten: nil))
+    }
+
+    func testQueueShouldSaveFalseWhenUnchanged() {
+        let q = makeQueue(3, at: 2)
+        XCTAssertFalse(queueShouldSave(active: q, lastWritten: q))
+    }
+
+    func testQueueShouldSaveTrueWhenCurrentIndexAdvanced() {
+        XCTAssertTrue(queueShouldSave(active: makeQueue(3, at: 2), lastWritten: makeQueue(3, at: 1)))
+    }
+
+    func testQueueShouldSaveTrueOnWholesaleReplacementEvenAtSameIndex() {
+        // A brand-new queue (different playlist/tracks) that happens to land
+        // on currentIndex 1 again must still be recognized as changed — this
+        // is why the comparison is full AppQueue equality, not just the index.
+        let old = makeQueue(3, at: 1, displayName: "Old Album")
+        let new = AppQueue(playlistName: "Library", tracks: [TrackListEntry(index: 99, name: "New", artist: "A", isCurrent: false)],
+                            currentIndex: 1, displayName: "New Album")
+        XCTAssertTrue(queueShouldSave(active: new, lastWritten: old))
+    }
+
+    func testQueueShouldClearFalseWhenActive() {
+        XCTAssertFalse(queueShouldClear(active: makeQueue(3), lastWritten: makeQueue(3)))
+    }
+
+    func testQueueShouldClearFalseWhenInactiveAndNothingWasEverWritten() {
+        XCTAssertFalse(queueShouldClear(active: nil, lastWritten: nil))
+    }
+
+    func testQueueShouldClearTrueWhenQueueWentInactiveAfterWriting() {
+        XCTAssertTrue(queueShouldClear(active: nil, lastWritten: makeQueue(3)))
+    }
+
+    // MARK: - decideQueueRestore (startup adopt/discard)
+
+    func testDecideQueueRestoreDoNothingWhenNoSavedQueue() {
+        XCTAssertEqual(decideQueueRestore(saved: nil, playerStopped: false, playingPersistentID: nil,
+                                           playingName: "", playingArtist: ""), .doNothing)
+    }
+
+    func testDecideQueueRestoreDiscardsWhenPlayerStopped() {
+        // Even a saved queue whose current entry WOULD match must discard —
+        // stopped means nothing to resume onto.
+        let s = saved(currentIndex: 1, tracks: [entry("Excursions", "A Tribe Called Quest")], anchorID: nil)
+        XCTAssertEqual(decideQueueRestore(saved: s, playerStopped: true, playingPersistentID: nil,
+                                           playingName: "Excursions", playingArtist: "A Tribe Called Quest"), .discard)
+    }
+
+    func testDecideQueueRestoreAdoptsOnMatch() {
+        let s = saved(currentIndex: 1, tracks: [entry("Excursions", "A Tribe Called Quest")], anchorID: "ID-1")
+        XCTAssertEqual(decideQueueRestore(saved: s, playerStopped: false, playingPersistentID: "ID-1",
+                                           playingName: "Excursions", playingArtist: "A Tribe Called Quest"),
+                       .adopt(s.queue))
+    }
+
+    func testDecideQueueRestoreDiscardsOnMismatch() {
+        let s = saved(currentIndex: 1, tracks: [entry("Excursions", "A Tribe Called Quest")], anchorID: "ID-1")
+        XCTAssertEqual(decideQueueRestore(saved: s, playerStopped: false, playingPersistentID: "ID-2",
+                                           playingName: "Some Other Track", playingArtist: "Some Other Artist"), .discard)
+    }
 }

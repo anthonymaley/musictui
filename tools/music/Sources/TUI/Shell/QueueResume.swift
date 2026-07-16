@@ -1,9 +1,9 @@
 // tools/music/Sources/TUI/Shell/QueueResume.swift
 //
-// Pure foundation for queue resume-across-restart. See
-// docs/plans/2026-07-16-queue-resume-design.md for the full design. This file is
-// deliberately inert: nothing here is called from AppQueueStore, the poller, the
-// scenes, or Shell yet. Wiring is a follow-up task.
+// Queue resume-across-restart. See docs/plans/2026-07-16-queue-resume-design.md
+// for the full design. SAVE is wired into PlaybackPoller.syncQueuePersistence
+// (the one choke point that sees every queue mutation); RESTORE is wired into
+// Shell.runShell() via restoreQueueOnLaunch, called once before poller.start().
 import Foundation
 
 /// The on-disk shape of a saved queue: the whole in-memory `AppQueue`, verbatim,
@@ -99,5 +99,97 @@ final class QueueStore {
     /// No-op if the file doesn't exist.
     func clear() {
         try? FileManager.default.removeItem(atPath: path)
+    }
+}
+
+// MARK: - SAVE: pure write-cadence decisions
+
+/// Pure decision: does the poller need to persist `active` to disk given what
+/// it last wrote? Full-struct equality (not just currentIndex) catches every
+/// kind of mutation — advance, jump, reshuffle, or a wholesale queue
+/// replacement — without bespoke per-field tracking. No active queue never
+/// triggers a save (see `queueShouldClear` for that side). Pure — no I/O.
+func queueShouldSave(active: AppQueue?, lastWritten: AppQueue?) -> Bool {
+    guard let active else { return false }
+    return active != lastWritten
+}
+
+/// Pure decision: does the poller need to clear the on-disk queue? True only
+/// once the queue has gone inactive AND `lastWritten` shows this poller
+/// actually wrote something this session — avoids a `removeItem` call every
+/// idle tick once the file is already gone (or was never written). Pure — no I/O.
+func queueShouldClear(active: AppQueue?, lastWritten: AppQueue?) -> Bool {
+    active == nil && lastWritten != nil
+}
+
+/// Read `persistent id of current track`, failure-tolerant: any AppleScript
+/// throw — including the macOS 26 `-1728` bug on streamed/non-library tracks
+/// (Apple FB19908171) — returns nil rather than surfacing an error. Called
+/// once at save time and once at startup restore; never per poll tick.
+func currentTrackPersistentID(backend: AppleScriptBackend) -> String? {
+    guard let result = try? syncRun({
+        try await backend.runMusic("""
+            try
+                return persistent id of current track
+            end try
+            return ""
+        """)
+    }) else { return nil }
+    let trimmed = result.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
+}
+
+// MARK: - RESTORE: pure adopt/discard decision + startup wiring
+
+/// The three outcomes of a startup restore attempt, kept separate from the
+/// I/O that produces its inputs (`queueStore.load()`, one live poll) so the
+/// adopt-vs-discard-vs-do-nothing decision itself is pure and testable.
+enum QueueRestoreDecision: Equatable {
+    case adopt(AppQueue)
+    case discard
+    case doNothing
+}
+
+/// Pure: given what was saved and one live read of the playing track, decide
+/// whether to adopt the saved queue, discard it, or do nothing (nothing was
+/// saved to begin with). A stopped player always discards — there's nothing
+/// to resume onto — before `queueMatches` is even consulted. Pure — no I/O.
+func decideQueueRestore(saved: PersistedQueue?, playerStopped: Bool,
+                         playingPersistentID: String?, playingName: String,
+                         playingArtist: String) -> QueueRestoreDecision {
+    guard let saved else { return .doNothing }
+    if playerStopped { return .discard }
+    if queueMatches(playingPersistentID: playingPersistentID, playingName: playingName,
+                     playingArtist: playingArtist, saved: saved) {
+        return .adopt(saved.queue)
+    }
+    return .discard
+}
+
+/// Startup restore, called once from `runShell()` before `poller.start()`.
+/// After this call returns, only the poller ever touches `queueStore` (see
+/// `PlaybackPoller.syncQueuePersistence`) — no concurrent access, no lock
+/// needed. Never re-issues `play`: the audio is already sounding at its real
+/// position, adopting the queue only re-attaches the driver.
+func restoreQueueOnLaunch(queueStore: QueueStore, appQueue: AppQueueStore, backend: AppleScriptBackend) {
+    guard let saved = queueStore.load() else { return }
+    switch pollNowPlaying(backend: backend) {
+    case .stopped:
+        if decideQueueRestore(saved: saved, playerStopped: true, playingPersistentID: nil,
+                               playingName: "", playingArtist: "") == .discard {
+            queueStore.clear()
+        }
+    case .active(let np):
+        let anchorID = currentTrackPersistentID(backend: backend)
+        switch decideQueueRestore(saved: saved, playerStopped: false, playingPersistentID: anchorID,
+                                   playingName: np.track, playingArtist: np.artist) {
+        case .adopt(let q): appQueue.set(q)
+        case .discard: queueStore.clear()
+        case .doNothing: break
+        }
+    case .unavailable:
+        // Can't determine reality (e.g. Music not yet responding at a cold
+        // launch) — never guess. Leave the file for the next launch to try.
+        break
     }
 }

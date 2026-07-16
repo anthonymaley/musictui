@@ -18,12 +18,17 @@ final class PlaybackPoller {
     private let store: NowPlayingStore
     private let backend: AppleScriptBackend
     private let appQueue: AppQueueStore
+    private let queueStore: QueueStore
     private let intervalMs: UInt32
     private let lock = NSLock()
     private var running = false
     private let finished = DispatchSemaphore(value: 0)
 
     // Thread-confined working state (poller thread only).
+    // Queue-resume SAVE: the last AppQueue actually written to queue.json (or
+    // nil if nothing's been written this session). Compared each tick against
+    // appQueue.read() to decide whether to write — see syncQueuePersistence().
+    private var lastWrittenQueue: AppQueue? = nil
     private var lastTrack = ""
     private var lastArtist = ""
     private var lastPosition = 0
@@ -79,10 +84,12 @@ final class PlaybackPoller {
         }
     }
 
-    init(store: NowPlayingStore, backend: AppleScriptBackend, appQueue: AppQueueStore, intervalMs: UInt32 = 1000) {
+    init(store: NowPlayingStore, backend: AppleScriptBackend, appQueue: AppQueueStore,
+         queueStore: QueueStore = QueueStore(), intervalMs: UInt32 = 1000) {
         self.store = store
         self.backend = backend
         self.appQueue = appQueue
+        self.queueStore = queueStore
         self.intervalMs = intervalMs
     }
 
@@ -127,7 +134,40 @@ final class PlaybackPoller {
             endedTrack: endedTrack, endedArtist: endedArtist, endedArtLines: endedArtLines)
     }
 
+    /// Queue-resume SAVE, the one choke point (docs/plans/2026-07-16-queue-resume-design.md):
+    /// every mutation to the app-owned queue — this poller's own auto-advance
+    /// below AND next/prev/jump/select from the main loop, which the poller
+    /// only ever observes via `appQueue.read()` on its next tick — flows
+    /// through here. Called via `defer` at the top of `tick()`, so it runs
+    /// after that tick's queue/advance logic on every exit path, including
+    /// early returns.
+    private func syncQueuePersistence() {
+        let active = appQueue.read()
+        if queueShouldSave(active: active, lastWritten: lastWrittenQueue) {
+            guard let active, active.currentIndex >= 1, active.currentIndex <= active.tracks.count else {
+                // Malformed queue (shouldn't happen) — remember it so this
+                // isn't retried every tick, but never write garbage to disk.
+                lastWrittenQueue = active
+                return
+            }
+            // The one extra AppleScript read this feature costs, and only at
+            // save time — never per poll tick. Failure-tolerant (nil anchor
+            // on the macOS 26 -1728 bug); name+artist below always saves.
+            let anchorID = currentTrackPersistentID(backend: backend)
+            let current = active.tracks[active.currentIndex - 1]
+            let persisted = PersistedQueue(queue: active, anchorPersistentID: anchorID,
+                                            anchorName: current.name, anchorArtist: current.artist)
+            try? queueStore.save(persisted)
+            lastWrittenQueue = active
+        } else if queueShouldClear(active: active, lastWritten: lastWrittenQueue) {
+            // Queue went native/stopped — never let a stale queue linger.
+            queueStore.clear()
+            lastWrittenQueue = nil
+        }
+    }
+
     func tick() {
+        defer { syncQueuePersistence() }
         switch pollNowPlaying(backend: backend) {
         case .active(let np):
             stoppedPolls = 0
