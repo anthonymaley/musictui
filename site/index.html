@@ -92,6 +92,9 @@ a:hover{color:var(--accent);}
 
 @media (max-width:860px){
   h1.hero{font-size:34px !important;}
+  .logo-main{font-size:12px !important;}
+  .logo-sub{font-size:13px !important;}
+  .logo-foot{font-size:11px !important;}
   .figgrid{grid-template-columns:1fr;}
   .figgrid img{height:220px;}
   .featgrid{grid-template-columns:repeat(2,1fr);}
@@ -128,11 +131,14 @@ a:hover{color:var(--accent);}
   <!-- ===== HERO = TUI ===== -->
   <section id="tui" class="wrap" style="padding-top:66px;padding-bottom:30px;">
     <div style="display:flex;flex-direction:column;align-items:center;text-align:center;margin-bottom:38px;">
-      <pre style="margin:0 0 40px;color:var(--accent);font-size:11px;line-height:1.2;opacity:.9;overflow:auto;max-width:100%;text-align:left;">     ___              __        __  ___         _
-    / _ | ___  ___   / /__     /  |/  /_ _____ (_)___
-   / __ |/ _ \/ _ \ / / -_)   / /|_/ / // (_-&lt;/ / __/
-  /_/ |_/ .__/ .__/_/\__/   /_/  /_/\_,_/___/_/\__/
-       /_/  /_/</pre>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px;margin:0 0 40px;">
+        <pre class="logo-main" style="margin:0;color:var(--accent);font-size:34px;line-height:1.14;opacity:.95;overflow:auto;max-width:100%;text-align:left;">    __  ___           _         ________  ______
+   /  |/  /_  _______(_)____   /_  __/ / / /  _/
+  / /|_/ / / / / ___/ / ___/    / / / / / // /
+ / /  / / /_/ (__  ) / /__     / / / /_/ // /
+/_/  /_/\__,_/____/_/\___/    /_/  \____/___/   </pre>
+        <div class="logo-sub" style="color:var(--muted);font-size:17px;letter-spacing:.04em;opacity:.85;">for Apple Music</div>
+      </div>
       <div style="display:inline-flex;align-items:center;gap:10px;font-size:12px;letter-spacing:.16em;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:999px;padding:6px 14px;margin-bottom:26px;">
         <span style="width:6px;height:6px;border-radius:50%;background:var(--accent);box-shadow:0 0 10px var(--accent);"></span>
         Claude Skill · CLI · TUI · macOS
@@ -372,11 +378,14 @@ a:hover{color:var(--accent);}
   <section class="wrap" style="padding-top:50px;padding-bottom:30px;">
     <div style="border:1px solid var(--line);border-radius:16px;background:linear-gradient(180deg,#0d1219,#0a0e14);padding:52px 40px;text-align:center;position:relative;overflow:hidden;">
       <div style="position:absolute;inset:0;background:radial-gradient(600px 300px at 50% -20%, rgba(63,224,122,.09), transparent 65%);pointer-events:none;"></div>
-      <pre style="margin:0 auto 6px;color:var(--accent);font-size:9px;line-height:1.15;opacity:.85;overflow:auto;display:inline-block;max-width:100%;text-align:left;">     ___              __        __  ___         _
-    / _ | ___  ___   / /__     /  |/  /_ _____ (_)___
-   / __ |/ _ \/ _ \ / / -_)   / /|_/ / // (_-&lt;/ / __/
-  /_/ |_/ .__/ .__/_/\__/   /_/  /_/\_,_/___/_/\__/
-       /_/  /_/</pre>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:7px;margin:0 0 8px;">
+        <pre class="logo-foot" style="margin:0;color:var(--accent);font-size:18px;line-height:1.14;opacity:.9;overflow:auto;max-width:100%;text-align:left;">    __  ___           _         ________  ______
+   /  |/  /_  _______(_)____   /_  __/ / / /  _/
+  / /|_/ / / / / ___/ / ___/    / / / / / // /
+ / /  / / /_/ (__  ) / /__     / / / /_/ // /
+/_/  /_/\__,_/____/_/\___/    /_/  \____/___/   </pre>
+        <div class="logo-foot-sub" style="color:var(--muted);font-size:11px;letter-spacing:.04em;opacity:.85;">for Apple Music</div>
+      </div>
       <h2 style="margin:20px 0 0;font-size:30px;color:#fff;font-weight:800;letter-spacing:-.01em;">Bring the terminal to your speakers.</h2>
       <p style="margin:14px auto 28px;color:var(--muted);font-size:15px;max-width:520px;">Free and open source, MIT licensed. Build it once. The rest is just talking.</p>
       <a class="btn" href="https://github.com/anthonymaley/musictui" style="padding:14px 26px;position:relative;">View on GitHub <span>↗</span></a>
