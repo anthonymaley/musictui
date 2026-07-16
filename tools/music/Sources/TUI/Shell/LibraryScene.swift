@@ -981,14 +981,16 @@ final class LibraryScene: Scene {
             y += gh
         case .none:
             if let last = lastPlaced { out += kittyDeleteEscape(id: last.id); lastPlaced = nil }
-            let gradient = gradientBlock(name: a.name + a.artist, width: gw, height: gh)
-            var seed = 0; for b in (a.name + a.artist).unicodeScalars { seed = (seed &* 31 &+ Int(b.value)) & 0xffffff }
-            let r = 80 + (seed & 0x7f), g = 80 + ((seed >> 8) & 0x7f), bl = 80 + ((seed >> 16) & 0x7f)
-            let color = "\u{1B}[38;2;\(r);\(g);\(bl)m"
-            for line in gradient {
-                out += ANSICode.moveTo(row: y, col: z.heroX) + "\(color)\(line)\(ANSICode.reset)"
-                y += 1
+            // Same square rect a real kitty cover would occupy — see the
+            // `.kitty` case above. y still advances by the full `gh` so the
+            // track-count/hint lines below don't shift depending on which
+            // art path rendered.
+            let (pc, pr) = kittySquareRect(maxCols: gw, maxRows: gh, cellW: cellW, cellH: cellH)
+            let gradient = gradientBlock(name: a.name + a.artist, width: pc, height: pr)
+            for (i, line) in gradient.enumerated() {
+                out += ANSICode.moveTo(row: y + i, col: z.heroX) + line
             }
+            y += gh
         }
         y += 1
 

@@ -184,4 +184,38 @@ final class ArtworkStoreTests: XCTestCase {
         wait(for: [settle2], timeout: 2)
         XCTAssertEqual(fetches, 1)
     }
+
+    // MARK: - renderArtHero's .none (gradient placeholder) path — square rect parity with .kitty
+
+    /// The placeholder must occupy EXACTLY the square-equivalent rect a real
+    /// kitty cover would (`kittySquareRect`), not the raw gw x gh box — a
+    /// placeholder that renders taller/wider than a real cover is visibly a
+    /// different shape side by side with one. At the user's real terminal
+    /// (14x34px cells, 1:2.429) a 54x34 box squares to 54x22, not 54x34.
+    func testPlaceholderRectMatchesKittySquareRectAtRealCellSize() {
+        var out = ""
+        let (pc, pr) = kittySquareRect(maxCols: 54, maxRows: 34, cellW: 14, cellH: 34)
+        XCTAssertEqual(pc, 54, "sanity: kittySquareRect itself")
+        XCTAssertEqual(pr, 22, "sanity: kittySquareRect itself")
+
+        let result = renderArtHero(artBlock: nil, gradientSeedText: "Test Station",
+                                   gw: 54, gh: 34, x: 1, y: 1,
+                                   cellW: 14, cellH: 34,
+                                   lastPlaced: nil, into: &out)
+
+        // One moveTo + gradient row per rendered line — exactly pr (22) of
+        // them, not gh (34): a moveTo targeting row 23 (pr+1) must be absent,
+        // and row 1 through row pr (22) must all be present.
+        for row in 1...pr {
+            XCTAssertTrue(out.contains(ANSICode.moveTo(row: row, col: 1)), "missing row \(row)")
+        }
+        XCTAssertFalse(out.contains(ANSICode.moveTo(row: pr + 1, col: 1)), "placeholder drew a row beyond the square rect (row \(pr + 1))")
+        XCTAssertEqual(out.components(separatedBy: ANSICode.reset).count - 1, pr,
+                       "expected exactly \(pr) rendered gradient rows (one reset each), not gh (34)")
+
+        // y still advances by the FULL gh (34), matching the .kitty/.lines
+        // paths, so the hero's metadata below the art doesn't shift depending
+        // on which art path rendered.
+        XCTAssertEqual(result.y, 1 + 34)
+    }
 }

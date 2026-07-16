@@ -219,14 +219,18 @@ func renderArtHero(artBlock: ArtBlock?, gradientSeedText: String,
         y += gh
     case .none:
         if let last = placed { out += kittyDeleteEscape(id: last.id); placed = nil }
-        let gradient = gradientBlock(name: gradientSeedText, width: gw, height: gh)
-        var seed = 0; for b in gradientSeedText.unicodeScalars { seed = (seed &* 31 &+ Int(b.value)) & 0xffffff }
-        let r = 80 + (seed & 0x7f), g = 80 + ((seed >> 8) & 0x7f), bl = 80 + ((seed >> 16) & 0x7f)
-        let color = "\u{1B}[38;2;\(r);\(g);\(bl)m"
-        for line in gradient {
-            out += ANSICode.moveTo(row: y, col: x) + "\(color)\(line)\(ANSICode.reset)"
-            y += 1
+        // Same square rect a real kitty cover would occupy — a real cover and
+        // the placeholder must be pixel-for-pixel the same shape (see the
+        // `.kitty` case above). y still advances the full `gh` reserved by
+        // the caller's layout, matching the `.kitty`/`.lines` cases, so the
+        // metadata drawn below the art doesn't shift depending on which of
+        // the three art paths rendered.
+        let (pc, pr) = kittySquareRect(maxCols: gw, maxRows: gh, cellW: cellW, cellH: cellH)
+        let gradient = gradientBlock(name: gradientSeedText, width: pc, height: pr)
+        for (i, line) in gradient.enumerated() {
+            out += ANSICode.moveTo(row: y + i, col: x) + line
         }
+        y += gh
     }
     return (y, placed)
 }

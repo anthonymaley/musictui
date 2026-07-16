@@ -1,4 +1,5 @@
 import XCTest
+import Foundation
 @testable import music
 
 final class PlaylistBrowserModelTests: XCTestCase {
@@ -74,6 +75,14 @@ final class PlaylistBrowserModelTests: XCTestCase {
     }
 
     // gradient determinism
+    //
+    // gradientBlock's contract changed from "bare glyph rows the caller wraps
+    // in one flat colour" to "rows that carry their own per-cell 24-bit colour
+    // escapes" (the old 4-glyph shade ramp could only ever be 4 bands — real
+    // colour does the shading now). Rows are still exactly `width` VISIBLE
+    // columns; escape sequences don't count toward that, so tests that need
+    // visible width or per-cell identity go through the helpers below instead
+    // of raw `String.count`/`Array(string)` indexing.
     func testGradientDeterministicAndSized() {
         let a = gradientBlock(name: "House Classics", width: 12, height: 5)
         let b = gradientBlock(name: "House Classics", width: 12, height: 5)
@@ -94,11 +103,16 @@ final class PlaylistBrowserModelTests: XCTestCase {
     // for any name. Verified this assertion fails against the pre-fix
     // implementation (reverted locally, ran the test, saw it fail) before
     // restoring the fix.
+    //
+    // Colour (not glyph) now carries the ramp, so periodicity is checked on
+    // the colour assigned to each VISIBLE cell (via `perCellColors`) instead
+    // of the raw character grid — every glyph is the same solid block now,
+    // so a raw character diff would find nothing.
     func testGradientIsNotAPeriodicLattice() {
         let width = 16, height = 16
         for name in ["House Classics", "Jazz Nights", "Deep House Finds", "Bluecoats 2024", "Replay 2022", "Loops"] {
             let block = gradientBlock(name: name, width: width, height: height)
-            let grid = block.map { Array($0) }
+            let grid = block.map { perCellColors($0) }
 
             var rowShiftDiffers = false
             for r in 0..<(height - 4) where grid[r] != grid[r + 4] {
@@ -122,7 +136,7 @@ final class PlaylistBrowserModelTests: XCTestCase {
             let block = gradientBlock(name: "Deep House Finds", width: w, height: h)
             XCTAssertEqual(block.count, h)
             for row in block {
-                XCTAssertEqual(row.count, w, "row width mismatch for size \(w)x\(h)")
+                XCTAssertEqual(visibleWidth(row), w, "row visible-width mismatch for size \(w)x\(h)")
             }
         }
     }
@@ -133,7 +147,7 @@ final class PlaylistBrowserModelTests: XCTestCase {
         XCTAssertEqual(gradientBlock(name: "Loops", width: 0, height: 0), [])
         let single = gradientBlock(name: "Loops", width: 1, height: 1)
         XCTAssertEqual(single.count, 1)
-        XCTAssertEqual(single[0].count, 1)
+        XCTAssertEqual(visibleWidth(single[0]), 1)
     }
 
     func testGradientDeterministicAcrossSizes() {
@@ -141,6 +155,44 @@ final class PlaylistBrowserModelTests: XCTestCase {
             let a = gradientBlock(name: "Bluecoats 2024", width: w, height: h)
             let b = gradientBlock(name: "Bluecoats 2024", width: w, height: h)
             XCTAssertEqual(a, b, "size \(w)x\(h) must be deterministic")
+        }
+    }
+
+    // Every row ends in ANSICode.reset and uses only solid block glyphs —
+    // never the old 4-glyph shade ramp — and every colour value is real
+    // 24-bit RGB (0...255 per channel), not a clamped/garbage value.
+    func testGradientRowsAreSolidBlocksWithValidColor() {
+        let block = gradientBlock(name: "Deep House Finds", width: 54, height: 22)
+        for row in block {
+            XCTAssertTrue(row.hasSuffix(ANSICode.reset))
+            XCTAssertFalse(row.contains("\u{2593}"), "dark shade glyph must not appear — colour carries the ramp now")
+            XCTAssertFalse(row.contains("\u{2592}"), "medium shade glyph must not appear — colour carries the ramp now")
+            XCTAssertFalse(row.contains("\u{2591}"), "light shade glyph must not appear — colour carries the ramp now")
+            for m in colorEscapeMatches(row) {
+                XCTAssertEqual(m.count, 3, "expected r;g;b")
+                for channel in m { XCTAssertTrue((0...255).contains(channel), "channel \(channel) out of 0...255") }
+            }
+        }
+    }
+
+    // Performance requirement: a colour escape is emitted only when the
+    // colour changes from the previous cell in that row, never once per cell
+    // (that would be 54*22 = 1188 escapes/frame at the real hero size).
+    // Escape count is direction-dependent (the ramp angle is seeded per
+    // name): a vertical-leaning ramp holds one colour across an entire row
+    // (as low as 1 escape/row), while a horizontal/diagonal one can change up
+    // to `gradientSteps` times per row. Either way this must stay far under
+    // the unconditional per-cell baseline.
+    func testGradientEscapeCountAtRealHeroSizeStaysWellUnderPerCellBaseline() {
+        let width = 54, height = 22
+        let perCellBaseline = width * height   // 1188 — what unconditional-per-cell would cost
+        for name in ["House Classics", "Jazz Nights", "Deep House Finds", "Bluecoats 2024", "Replay 2022", "Loops",
+                     "Working Vibes", "Top 25 Most Played", "Recently Played", "A", "The Long One Right Here"] {
+            let block = gradientBlock(name: name, width: width, height: height)
+            let escapes = block.reduce(0) { $0 + colorEscapeMatches($1).count }
+            XCTAssertGreaterThan(escapes, 0, "\(name): expected at least one colour escape")
+            XCTAssertLessThan(escapes, perCellBaseline / 2,
+                              "\(name): \(escapes) escapes is not meaningfully cheaper than the \(perCellBaseline) per-cell baseline")
         }
     }
 
@@ -152,5 +204,70 @@ final class PlaylistBrowserModelTests: XCTestCase {
     }
     func testRailNameShortUnchanged() {
         XCTAssertEqual(railName("Short", nameWidth: 10), "Short")
+    }
+}
+
+// MARK: - gradientBlock test helpers
+//
+// gradientBlock rows now carry embedded `\u{1B}[38;2;r;g;bm` colour escapes
+// (plus a trailing ANSICode.reset), so raw `String.count`/`Array(string)`
+// indexing no longer lines up with visible columns. These helpers parse that
+// contract back out for assertions.
+
+/// Visible column count — the same thing a terminal would actually draw —
+/// with every `ESC [ ... m` SGR sequence stripped out first.
+private func visibleWidth(_ s: String) -> Int {
+    var result = 0
+    var it = s.makeIterator()
+    while let ch = it.next() {
+        if ch == "\u{1B}" {
+            _ = it.next()   // '['
+            while let next = it.next(), next != "m" {}
+        } else {
+            result += 1
+        }
+    }
+    return result
+}
+
+/// The colour escape active at each VISIBLE glyph position, expanded across
+/// every column it covers — e.g. one escape followed by 5 glyphs yields the
+/// same escape string 5 times. Lets tests diff "the colour at cell (r, c)"
+/// the same way the old glyph-per-cell grid did, now that colour (not glyph)
+/// carries the ramp. The trailing `ANSICode.reset` never attaches to a glyph
+/// (it always comes after the last one), so it's dropped automatically.
+private func perCellColors(_ row: String) -> [String] {
+    var colors: [String] = []
+    var currentColor = ""
+    let chars = Array(row)
+    var i = 0
+    while i < chars.count {
+        if chars[i] == "\u{1B}" {
+            var esc = "\u{1B}"
+            i += 1
+            while i < chars.count {
+                esc.append(chars[i])
+                let done = chars[i] == "m"
+                i += 1
+                if done { break }
+            }
+            currentColor = esc
+        } else {
+            colors.append(currentColor)
+            i += 1
+        }
+    }
+    return colors
+}
+
+/// Every `\u{1B}[38;2;r;g;bm` foreground-colour escape in `s`, as `[r, g, b]`
+/// triples — `ANSICode.reset` (`\u{1B}[0m`) doesn't match this shape, so it's
+/// excluded automatically.
+private func colorEscapeMatches(_ s: String) -> [[Int]] {
+    guard let regex = try? NSRegularExpression(pattern: "\\x1B\\[38;2;(\\d+);(\\d+);(\\d+)m") else { return [] }
+    let ns = s as NSString
+    let matches = regex.matches(in: s, range: NSRange(location: 0, length: ns.length))
+    return matches.map { m in
+        (1...3).map { Int(ns.substring(with: m.range(at: $0))) ?? -1 }
     }
 }
