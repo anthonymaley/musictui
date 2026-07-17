@@ -51,14 +51,13 @@ Control Apple Music, AirPlay speakers, and AirPods from Claude Code or the termi
   └─────────────────────────────────────────────────────────────────────┘
 ```
 
-## Four Ways to Use It
+## Three Ways to Use It
 
 | Layer | How | Setup | Token cost |
 |-------|-----|-------|-----------|
-| **Media keys** (⏯ ⏭ ⏮) | Transport: play/pause, next, previous — your keyboard already does this | None | None |
-| **Natural language** (`/music play Kid A in the kitchen and living room at 60%`) | Everything in words: playback with routing, search, playlists, radio, discovery | Build CLI from source | Normal |
 | **CLI + TUI** (`music`, `music now`, `music speaker`) | Terminal commands, interactive shell, scriptable | Build from source | None |
 | **CLI + API** (`music search`, `music playlist create`) | Catalog, library, discovery | + Apple Developer account | None |
+| **Natural language** (`/music play Kid A in the kitchen and living room at 60%`) | Everything in words: playback with routing, search, playlists, radio, discovery | Build CLI from source | Normal |
 
 There are no per-action slash commands — `/music` (the skill) is the single entry point, and bare transport belongs to the keys your Mac already has.
 
@@ -208,13 +207,13 @@ Adding a speaker, `music speaker set`, or `music speaker only` verify the route 
 | Command | What it does |
 |---------|-------------|
 | `music eq` | Show active preset + EQ status |
-| `music eq nightclub` | Select a venue preset (fuzzy; created as a real Music.app preset on first use) |
+| `music eq nightclub` | Select a venue preset (fuzzy; created as a Music.app preset on first use) |
 | `music eq "Bass Booster"` | Select any Music built-in preset by name |
 | `music eq list` | List all available presets (venue pack first, then Music's built-ins) |
 | `music eq on` / `music eq off` | Enable or disable EQ |
 | `music eq remove-pack` | Delete the venue preset pack |
 
-Venue pack (Nightclub, Dungeon, Open Air, Concert Hall, Jazz Club, Stadium, Cathedral, Late Night) — each is a real Music.app preset created on first selection and visible in Music's own EQ window. Selecting any preset auto-enables EQ. Unknown names print near-matches.
+Venue pack (Nightclub, Dungeon, Open Air, Concert Hall, Jazz Club, Stadium, Cathedral, Late Night) — each is created as a Music.app preset on first selection and visible in Music's own EQ window. Selecting any preset auto-enables EQ. Unknown names print near-matches.
 
 > **Equalizer requires Accessibility permission.** Music's scripting interface for live EQ state is broken in current macOS builds, so `music eq` drives the real Equalizer window instead (which it opens and leaves open). Grant your terminal app access under System Settings → Privacy & Security → Accessibility — the command tells you if it's missing. Preset creation and deletion need no extra permission.
 
@@ -468,6 +467,14 @@ Speaker lists work the same way (`~/.config/music/last-speakers.json`). Run `mus
 - **Swift 5.9+** (only if building the music CLI)
 - **AirPods** must be connected via Bluetooth to appear as a device
 - **chafa** (optional, `brew install chafa` — enables album art in now-playing TUI)
+
+## Credits
+
+- **[swift-argument-parser](https://github.com/apple/swift-argument-parser)** (Apache 2.0) — the CLI's argument parsing. The only bundled dependency.
+- **[chafa](https://github.com/hpjansson/chafa)** by Hans Petter Jansson — renders album art as terminal half-blocks where the Kitty graphics protocol isn't available. Optional (`brew install chafa`).
+- Cover art on Kitty, WezTerm, Ghostty, and iTerm2 3.5+ uses the [Kitty terminal graphics protocol](https://sw.kovidgoyal.net/kitty/graphics-protocol/), implemented from its public spec.
+
+Everything else is Apple's own frameworks (Foundation, CryptoKit, CoreGraphics, ImageIO, Network) plus the Apple Music AppleScript interface and the Apple Music API.
 
 ## License
 
