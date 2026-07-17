@@ -52,4 +52,47 @@ final class NowPlayingLayoutTests: XCTestCase {
         XCTAssertEqual(leftW, 44)
         XCTAssertGreaterThanOrEqual(listW, 40, "Up Next list squeezed too narrow at the twoPane boundary")
     }
+
+    // MARK: - stackedListStartY
+
+    // Stacked mode (frame.width < 92) used to start the Up Next list at the
+    // same row as the control grid, so the two overprinted each other —
+    // "Up Nextle   On  [Off]" at 80x36. stackedListStartY computes where the
+    // list should start instead: one blank row below wherever the grid
+    // actually stopped drawing.
+
+    func testNormalCaseStartsOneBlankRowBelowTheGridsLastRow() {
+        // Plenty of room: the grid draws its full ControlGrid.rowCount (4)
+        // rows uninterrupted, so its last row is gridStartY + rowCount - 1.
+        let gridStartY = 10
+        let gridBottom = 100
+        let lastGridRow = gridStartY + ControlGrid.rowCount - 1
+        let listY = NowPlayingScene.stackedListStartY(gridStartY: gridStartY, gridBottom: gridBottom)
+        // One blank spacer row, then the list header.
+        XCTAssertEqual(listY, lastGridRow + 2)
+        XCTAssertEqual(listY, 15)
+    }
+
+    func testCrampedCaseClampedByGridBottomPushesListPastTheBottom() {
+        // The grid's own `guard y <= bottom else { break }` clamps it to 2
+        // rows here (10, 11) instead of its full 4 — its last drawn row is
+        // gridBottom, not gridStartY + rowCount - 1.
+        let gridStartY = 10
+        let gridBottom = 11
+        let listY = NowPlayingScene.stackedListStartY(gridStartY: gridStartY, gridBottom: gridBottom)
+        // Past the bottom: the caller's `listY + 1 <= listBottom` guard (where
+        // listBottom == gridBottom) then skips the list entirely — grid wins.
+        XCTAssertGreaterThan(listY, gridBottom)
+        XCTAssertFalse(listY + 1 <= gridBottom, "cramped listY should fail the caller's render guard")
+    }
+
+    func testGridExactlyFillsToBottomLeavesNoRoomForTheList() {
+        // Boundary: the grid's full row count fits exactly up to gridBottom
+        // (no clamping needed), but that leaves zero rows for a spacer + list.
+        let gridStartY = 10
+        let gridBottom = gridStartY + ControlGrid.rowCount - 1  // 13
+        let listY = NowPlayingScene.stackedListStartY(gridStartY: gridStartY, gridBottom: gridBottom)
+        XCTAssertGreaterThan(listY, gridBottom)
+        XCTAssertFalse(listY + 1 <= gridBottom, "exact-fit listY should still fail the caller's render guard")
+    }
 }

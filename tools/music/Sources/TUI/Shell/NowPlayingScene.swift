@@ -427,8 +427,12 @@ final class NowPlayingScene: Scene {
         out += renderControlGrid(startY: my + 2, x: leftX, bottom: frame.bodyY + frame.bodyHeight - 1)
 
         // --- Up Next: right pane (wide) or below the metadata (narrow) ---
+        // Stacked mode used to start the list at the same row as the control
+        // grid (`my + 2`) — the grid and the "Up Next" header overprinted each
+        // other. stackedListStartY mirrors the grid's own row-count/clamp math
+        // so the list always starts below wherever the grid actually stopped.
         let listX = twoPane ? (leftX + leftW + 2) : leftX
-        let listY = twoPane ? frame.bodyY : (my + 2)
+        let listY = twoPane ? frame.bodyY : NowPlayingScene.stackedListStartY(gridStartY: my + 2, gridBottom: listBottom)
         let listW = twoPane ? max(20, frame.width - listX - 1) : (frame.width - 6)
         if geniusActive {
             // Genius's real queue isn't scriptable (the snapshot shows the
@@ -459,6 +463,19 @@ final class NowPlayingScene: Scene {
             )
         }
         return out
+    }
+
+    /// Stacked-mode Up Next start row: one blank spacer row below wherever the
+    /// control grid actually stopped drawing. Mirrors renderControlGrid's own
+    /// clamp (`ControlGrid.rowCount` rows from `gridStartY`, cut off at
+    /// `gridBottom`) instead of assuming the grid always reaches its full row
+    /// count, so the two never land on the same row. When there's no room left
+    /// after the grid, this returns a row past `gridBottom` — the caller's
+    /// existing `listY + 1 <= listBottom` guard then skips the list (grid
+    /// wins). Pure; two-pane mode doesn't call this — its list start is simply
+    /// `frame.bodyY`, sharing no row with the grid.
+    static func stackedListStartY(gridStartY: Int, gridBottom: Int) -> Int {
+        min(gridStartY + ControlGrid.rowCount, gridBottom + 1) + 1
     }
 
     /// The playback-control grid: a label column then option cells per row.
