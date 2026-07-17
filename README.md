@@ -18,7 +18,7 @@
 
 ![Apple Music TUI demo](media/demo.gif)
 
-Control Apple Music, AirPlay speakers, and AirPods from Claude Code or the terminal — a Claude Code skill, CLI, and interactive Apple Music TUI for macOS. Verified multi-room playback, library browsing (artists, albums, songs), catalog + library search, playlists, radio stations, a real equalizer with venue presets, the on-screen visualizer, and shuffle/repeat/Genius controls.
+Control Apple Music, AirPlay speakers, and AirPods from Claude Code or the terminal: an Apple Music TUI, CLI, and Claude Code skill for macOS. Multi-room playback with verified routing, library browsing (artists, albums, songs), catalog and library search, playlists, radio stations, a venue equalizer, and the on-screen visualizer.
 
 ```
   ┌─────────────────────────────────────────────────────────────────────┐
