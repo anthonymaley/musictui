@@ -62,7 +62,7 @@ footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-betw
       <div style="color:var(--muted);font-size:13px;"><a href="/" style="color:var(--cyan);">♫ music</a> <span style="color:var(--dim);">— compare</span></div>
       <nav style="margin-left:auto;display:flex;align-items:center;gap:22px;font-size:13.5px;">
         <a href="/" style="color:var(--muted);">home</a>
-        <a class="ghbtn" href="https://github.com/anthonymaley/musictui">GitHub <span style="color:var(--dim);">↗</span></a>
+        <a class="ghbtn" href="https://github.com/anthonymaley/musictui" data-umami-event="github-compare">GitHub <span style="color:var(--dim);">↗</span></a>
       </nav>
     </div>
   </header>
@@ -70,7 +70,7 @@ footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-betw
   <section class="wrap" style="padding-top:56px;padding-bottom:20px;">
     <h1 style="margin:0 0 18px;font-size:34px;line-height:1.15;font-weight:800;letter-spacing:-.01em;color:#fff;max-width:820px;">Apple Music in the terminal: how the projects actually compare</h1>
     <p>Most terminal projects for Apple Music are transport wrappers. Play, pause, skip, volume, sometimes a search. That's useful, and some do it with real charm. MusicTUI makes a different bet: the terminal as a full Apple Music client. A tabbed TUI, multi-room AirPlay that verifies its routes against actual network sessions, library browsing with real cover art, playlist management, an equalizer, and a natural-language layer for Claude Code.</p>
-    <p>Claims about the other projects come from their own READMEs as of July 2026, linked so you can check. If something is out of date, <a href="https://github.com/anthonymaley/musictui/issues">open an issue</a> and I'll update it.</p>
+    <p>Claims about the other projects come from their own READMEs as of July 2026, linked so you can check. If something is out of date, <a href="https://github.com/anthonymaley/musictui/issues" data-umami-event="compare-issue">open an issue</a> and I'll update it.</p>
   </section>
 
   <section class="wrap" style="padding-bottom:30px;">
@@ -80,11 +80,11 @@ footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-betw
         <tr>
           <th>Feature</th>
           <th>MusicTUI</th>
-          <th><a href="https://github.com/mcthomas/Apple-Music-CLI-Player">Apple-Music-CLI-Player</a></th>
-          <th><a href="https://github.com/ori0o0p/apple-music-tui">apple-music-tui (Rust)</a></th>
-          <th><a href="https://github.com/Mabylife/apple-music-tui">apple-music-tui (npm)</a></th>
-          <th><a href="https://github.com/limiu82214/lazyAppleMusic">lazyAppleMusic</a></th>
-          <th><a href="https://github.com/wiedymi/applemusic-cli">applemusic-cli</a></th>
+          <th><a href="https://github.com/mcthomas/Apple-Music-CLI-Player" data-umami-event="competitor-mcthomas">Apple-Music-CLI-Player</a></th>
+          <th><a href="https://github.com/ori0o0p/apple-music-tui" data-umami-event="competitor-rust-tui">apple-music-tui (Rust)</a></th>
+          <th><a href="https://github.com/Mabylife/apple-music-tui" data-umami-event="competitor-npm-tui">apple-music-tui (npm)</a></th>
+          <th><a href="https://github.com/limiu82214/lazyAppleMusic" data-umami-event="competitor-lazyapplemusic">lazyAppleMusic</a></th>
+          <th><a href="https://github.com/wiedymi/applemusic-cli" data-umami-event="competitor-applemusic-cli">applemusic-cli</a></th>
         </tr>
         <tr><td>Interface</td><td>Tabbed TUI + CLI + Claude Code skill</td><td>CLI + now-playing widget</td><td>TUI</td><td>TUI</td><td>TUI</td><td>CLI only</td></tr>
         <tr><td>Backend</td><td>Native Music.app (AppleScript + Apple Music API)</td><td>Native Music.app (AppleScript)</td><td>Native Music.app (JXA)</td><td class="part">Requires Cider running as backend player</td><td>Native Music.app</td><td>Native Music.app (AppleScript)</td></tr>
@@ -109,19 +109,19 @@ footer{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-betw
     <div class="rule" style="margin-bottom:16px;"><h2>♫ The other projects</h2><div class="ln"></div></div>
 
     <div class="profile">
-      <h3><a href="https://github.com/mcthomas/Apple-Music-CLI-Player">Apple-Music-CLI-Player</a>: the incumbent</h3>
+      <h3><a href="https://github.com/mcthomas/Apple-Music-CLI-Player" data-umami-event="competitor-mcthomas">Apple-Music-CLI-Player</a>: the incumbent</h3>
       <p>The most established project here (~170+ stars) and the lightest: a shell script you can read in one sitting, with a charming now-playing widget and fzf-driven fuzzy playback. If you want zero build steps and transport with taste, it's a fine choice. It doesn't try to be a client: no catalog search, no playlist management, one-output AirPlay via an optional snippet.</p>
     </div>
     <div class="profile">
-      <h3><a href="https://github.com/ori0o0p/apple-music-tui">apple-music-tui (Rust)</a>: the prettiest renderer</h3>
+      <h3><a href="https://github.com/ori0o0p/apple-music-tui" data-umami-event="competitor-rust-tui">apple-music-tui (Rust)</a>: the prettiest renderer</h3>
       <p>A Rust remote controller with vim keys. Its artwork rendering uses the iTerm2/Kitty/WezTerm graphics protocols, which draw sharper images than MusicTUI's half-block characters on terminals that support them. Scope is playback, volume, progress, and search. Early days (no stars yet when I checked), and worth watching.</p>
     </div>
     <div class="profile">
-      <h3><a href="https://github.com/Mabylife/apple-music-tui">apple-music-tui (npm)</a>: the Cider route</h3>
-      <p>A TypeScript TUI that drives <a href="https://cider.sh">Cider</a> rather than Music.app, which means Cider must be installed and running as the actual player. Full transport, search, and radio stations; self-described as in active development with bugs and missing features. If you already live in Cider, this fits; if you want the native Music.app (and your AirPlay groups), it's a second app in the chain.</p>
+      <h3><a href="https://github.com/Mabylife/apple-music-tui" data-umami-event="competitor-npm-tui">apple-music-tui (npm)</a>: the Cider route</h3>
+      <p>A TypeScript TUI that drives <a href="https://cider.sh" data-umami-event="competitor-cider">Cider</a> rather than Music.app, which means Cider must be installed and running as the actual player. Full transport, search, and radio stations; self-described as in active development with bugs and missing features. If you already live in Cider, this fits; if you want the native Music.app (and your AirPlay groups), it's a second app in the chain.</p>
     </div>
     <div class="profile">
-      <h3><a href="https://github.com/limiu82214/lazyAppleMusic">lazyAppleMusic</a> and <a href="https://github.com/wiedymi/applemusic-cli">applemusic-cli</a>: early sketches</h3>
+      <h3><a href="https://github.com/limiu82214/lazyAppleMusic" data-umami-event="competitor-lazyapplemusic">lazyAppleMusic</a> and <a href="https://github.com/wiedymi/applemusic-cli" data-umami-event="competitor-applemusic-cli">applemusic-cli</a>: early sketches</h3>
       <p>A Go/Bubble Tea TUI with playlist browsing and a known-issues list, and a single-commit TypeScript CLI for transport and local search. Both are honest early-stage projects, not daily drivers yet.</p>
     </div>
   </section>
