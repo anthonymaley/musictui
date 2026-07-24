@@ -584,25 +584,32 @@ final class LibraryScene: Scene {
     /// track, so not gapless — the accepted trade-off. On the action queue; the
     /// bulk fetch never freezes the UI and failures toast.
     private func playAlbum(title: String, artist: String, shuffle: Bool, startAt: Int = 1) {
-        let escTitle = escapeAppleScriptString(title)
-        let escArtist = escapeAppleScriptString(artist)
         let backend = self.backend
         let store = self.appQueue
+        let status = self.status
         actions.run("Play") {
-            // Match on album artist too, not just track artist: remix/compilation
-            // albums credit each track to the remixer, so `artist is Y` alone finds
-            // nothing (the album shows 0 tracks and won't play). `album is X` scopes
-            // to the album; the artist/album-artist clause disambiguates same-named
-            // albums by different artists.
-            let tracks = fetchLibraryTracksWithPositions(
-                backend: backend,
-                whereClause: "album is \"\(escTitle)\" and (artist is \"\(escArtist)\" or album artist is \"\(escArtist)\")")
-            try require(!tracks.isEmpty, "Couldn't load '\(title)'.")
-            let ordered = shuffle ? tracks.shuffled() : tracks
+            // resolveAlbumPlaybackTracks tries the strict album+artist clause first
+            // (remix/compilation albums credit each track to the remixer, so
+            // `album artist` catches those, and the artist clause disambiguates
+            // same-named albums), then falls back to matching by album title alone
+            // when the REST-sourced artist string has drifted from the stored album
+            // artist — the pre-release "Mere Mortals" case, where the exact clause
+            // matched 0 of 14 tracks. It also drops tracks Music can't play yet
+            // (pre-release/removed), on which `play track` would silently no-op.
+            let res = resolveAlbumPlaybackTracks(backend: backend, title: title, artist: artist)
+            try require(!res.tracks.isEmpty, res.matched > 0
+                ? "'\(title)': no tracks available to play yet."
+                : "Couldn't load '\(title)'.")
+            let ordered = shuffle ? res.tracks.shuffled() : res.tracks
             let idx = shuffle ? 1 : min(max(1, startAt), ordered.count)
             store.set(AppQueue(playlistName: "Library", tracks: ordered, currentIndex: idx, displayName: title))
             try require(playQueueTrack(backend: backend, playlist: "Library", position: ordered[idx - 1].index),
                         "Couldn't play '\(title)'.")
+            // Pre-release albums surface every planned track but only stream some;
+            // say so rather than silently playing a partial album.
+            if res.matched > ordered.count {
+                status.post("Playing \(ordered.count) of \(res.matched) — the rest aren't available yet.")
+            }
         }
     }
 

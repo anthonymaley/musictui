@@ -78,16 +78,12 @@ func makeLibraryDataSources(api: RESTAPIBackend, backend: AppleScriptBackend) ->
                 (try? syncRun { try await api.libraryArtists(limit: limit, offset: offset) }) ?? []
             }, onPage: onPage)
         },
+        // Shares resolveAlbumPlaybackTracks with the play path so the preview pane
+        // and the actual queue never disagree — including the album-title fallback
+        // for albums whose REST artist string has drifted from the stored album
+        // artist (which the old strict-only clause left showing an empty tracklist).
         onAlbumTracks: { title, artist in
-            let script = """
-            set out to ""
-            repeat with t in (every track of playlist "Library" whose album is "\(escapeAppleScriptString(title))" and (artist is "\(escapeAppleScriptString(artist))" or album artist is "\(escapeAppleScriptString(artist))"))
-                set out to out & (name of t) & linefeed
-            end repeat
-            return out
-            """
-            let raw = (try? syncRun { try await backend.runMusic(script, timeout: 30) }) ?? ""
-            return raw.split(separator: "\n").map(String.init)
+            resolveAlbumPlaybackTracks(backend: backend, title: title, artist: artist).tracks.map(\.name)
         },
         // One artist's albums are few and the endpoint already asks for 100 — no paging.
         onArtistAlbums: { id in (try? syncRun { try await api.artistAlbums(artistID: id) }) ?? [] }

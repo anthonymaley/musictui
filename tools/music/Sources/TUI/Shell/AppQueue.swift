@@ -134,6 +134,129 @@ func fetchLibraryTracksWithPositions(backend: AppleScriptBackend, whereClause: S
     return parseLibraryTrackPositions(raw)
 }
 
+/// A library track row carrying the album artist (to disambiguate a same-titled
+/// album once the strict `whose` clause has missed) and the cloud status (to drop
+/// tracks Music can't play yet). Parsed from the 5-field album fetch below.
+struct LibraryAlbumRow: Equatable {
+    let index: Int
+    let name: String
+    let artist: String
+    let albumArtist: String
+    let cloudStatus: String
+}
+
+/// Parse "index<FS>name<FS>artist<FS>albumArtist<FS>cloudStatus" lines (the album
+/// fetch output) into rows. Empty fields are preserved (a track with no album artist
+/// keeps its column) so the five fields stay aligned; malformed lines (non-numeric
+/// index or wrong field count) are dropped. Pure → unit-tested.
+func parseLibraryAlbumRows(_ raw: String) -> [LibraryAlbumRow] {
+    var out: [LibraryAlbumRow] = []
+    for line in raw.components(separatedBy: "\n") where !line.isEmpty {
+        let f = line.split(separator: asFieldSep, maxSplits: 4, omittingEmptySubsequences: false).map(String.init)
+        guard f.count == 5, let idx = Int(f[0]) else { continue }
+        out.append(LibraryAlbumRow(index: idx, name: f[1], artist: f[2], albumArtist: f[3], cloudStatus: f[4]))
+    }
+    return out
+}
+
+/// Whether Music can actually play a track with this cloud status. A denylist, NOT
+/// an allowlist: local-file tracks report "unknown"/other statuses and must stay
+/// playable, so only genuinely-unavailable statuses are excluded. "prerelease" was
+/// verified live (on the pre-release "Mere Mortals", `play track` silently no-ops on
+/// it); "removed"/"no longer available" are unavailable by definition. Pure → tested.
+func isPlayableCloudStatus(_ status: String) -> Bool {
+    let unplayable: Set<String> = ["prerelease", "removed", "no longer available"]
+    return !unplayable.contains(status.lowercased().trimmingCharacters(in: .whitespaces))
+}
+
+/// Fold the punctuation that separates a multi-artist credit so Apple Music's
+/// display form ("A, B") and the local library's stored form ("A & B") compare
+/// equal: lowercase, turn "&"/"," into spaces, collapse whitespace. Deliberately
+/// does NOT fold the word "and" — it appears inside real titles and single names,
+/// so folding it would over-match. Pure → unit-tested.
+func normalizeCredit(_ s: String) -> String {
+    let swapped = s.lowercased()
+        .replacingOccurrences(of: "&", with: " ")
+        .replacingOccurrences(of: ",", with: " ")
+    return swapped.split(whereSeparator: { $0 == " " || $0 == "\t" || $0 == "\n" }).joined(separator: " ")
+}
+
+/// Pick an album's tracks from a title-only library fetch, resolving the artist in
+/// Swift when the strict album+artist `whose` clause missed — Apple Music's display
+/// credit having drifted from the stored album artist (comma vs ampersand, seen live
+/// on the pre-release "Mere Mortals") or per-track soloist credits. One album-artist
+/// group → play all of it (no ambiguity). A genuine same-title collision → the group
+/// whose album artist matches the requested one (punctuation-tolerant); if none
+/// matches, refuse to guess and return [] so the caller errors rather than plays the
+/// wrong album. Pure → unit-tested.
+func selectAlbumTracks(_ rows: [LibraryAlbumRow], requestedArtist: String) -> [LibraryAlbumRow] {
+    guard !rows.isEmpty else { return [] }
+    var groups: [String] = []
+    for r in rows where !groups.contains(r.albumArtist) { groups.append(r.albumArtist) }
+    if groups.count == 1 { return rows }
+    let want = normalizeCredit(requestedArtist)
+    guard let hit = groups.first(where: { normalizeCredit($0) == want }) else { return [] }
+    return rows.filter { $0.albumArtist == hit }
+}
+
+/// Fetch library tracks matching a `whose` clause, WITH each track's play-order
+/// position, album artist, and cloud status — the richer read the album resolver
+/// needs to disambiguate a drifted artist credit and drop tracks Music can't play.
+/// `cloud status` is guarded per track (it can throw on some local files); an
+/// unreadable status defaults to "unknown", which stays playable. Same per-element
+/// read shape as fetchLibraryTracksWithPositions (album track counts are small).
+func fetchLibraryAlbumRows(backend: AppleScriptBackend, whereClause: String) -> [LibraryAlbumRow] {
+    let raw = (try? syncRun {
+        try await backend.runMusic("""
+            set fs to (ASCII character 31)
+            set out to ""
+            repeat with t in (every track of playlist "Library" whose \(whereClause))
+                set cs to "unknown"
+                try
+                    set cs to (cloud status of t as text)
+                end try
+                set out to out & (index of t) & fs & (name of t) & fs & (artist of t) & fs & (album artist of t) & fs & cs & linefeed
+            end repeat
+            return out
+        """, timeout: 30)
+    }) ?? ""
+    return parseLibraryAlbumRows(raw)
+}
+
+/// The outcome of resolving an album for playback: the ordered tracks that can
+/// actually play, plus how many tracks the album matched before the playability
+/// filter — so the caller can report "playing N of M" when a pre-release album has
+/// only some of its movements available yet.
+struct AlbumResolution: Equatable {
+    let tracks: [TrackListEntry]
+    let matched: Int
+}
+
+/// Resolve an album for playback (shared with the tracklist preview so the two never
+/// diverge). Try the strict album+artist clause first — unchanged for the common
+/// case, and it still disambiguates a same-titled album when the artist DOES match.
+/// Only if that matches nothing fall back to matching by album title alone and
+/// resolving the artist in Swift (selectAlbumTracks), so no album that plays today can
+/// regress. Either way, drop tracks Music can't play yet (pre-release/removed), which
+/// otherwise make `play track` silently no-op; `matched` keeps the pre-filter count
+/// for the "N of M" message.
+func resolveAlbumPlaybackTracks(backend: AppleScriptBackend, title: String, artist: String) -> AlbumResolution {
+    let escTitle = escapeAppleScriptString(title)
+    let escArtist = escapeAppleScriptString(artist)
+    let strict = fetchLibraryAlbumRows(
+        backend: backend,
+        whereClause: "album is \"\(escTitle)\" and (artist is \"\(escArtist)\" or album artist is \"\(escArtist)\")")
+    // Strict is already artist-scoped by the clause; only the title-only fallback
+    // needs Swift-side disambiguation.
+    let matched = strict.isEmpty
+        ? selectAlbumTracks(fetchLibraryAlbumRows(backend: backend, whereClause: "album is \"\(escTitle)\""),
+                            requestedArtist: artist)
+        : strict
+    let playable = matched.filter { isPlayableCloudStatus($0.cloudStatus) }
+        .map { TrackListEntry(index: $0.index, name: $0.name, artist: $0.artist, isCurrent: false) }
+    return AlbumResolution(tracks: playable, matched: matched.count)
+}
+
 /// The full play-order track list the now-playing view shows, with the current
 /// track marked. Unlike Music's windowed context (which paged to limit AppleScript
 /// fetches), the app queue is already in memory, so we expose every track — the
